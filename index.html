@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>超市销售管理系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="css/style.css" rel="stylesheet">
+    
+    <style>
+        /* 主页背景 */
+        #main-content {
+            background: #f8f9fa;
+            min-height: 100vh;
+        }
+
+        /* 侧边栏样式 */
+        #sidebar {
+            background: #343a40;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <!-- 侧边栏 -->
+        <nav id="sidebar" class="active">
+            <div class="sidebar-header">
+                <h3>超市销售管理系统</h3>
+            </div>
+
+            <ul class="list-unstyled components">
+                <li>
+                    <a href="#basicInfoSubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
+                        基础信息管理
+                    </a>
+                    <ul class="collapse list-unstyled" id="basicInfoSubmenu">
+                        <li><a href="#" onclick="loadContent('products')">商品信息</a></li>
+                        <li><a href="#" onclick="loadContent('employees')">员工信息</a></li>
+                        <li><a href="#" onclick="loadContent('customers')">客户信息</a></li>
+                        <li><a href="#" onclick="loadContent('suppliers')">供应商信息</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="#purchaseSubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
+                        进货管理
+                    </a>
+                    <ul class="collapse list-unstyled" id="purchaseSubmenu">
+                        <li><a href="#" onclick="loadContent('purchase-entry')">入库登记</a></li>
+                        <li><a href="#" onclick="loadContent('purchase-query')">入库查询</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="#inventorySubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
+                        库房管理
+                    </a>
+                    <ul class="collapse list-unstyled" id="inventorySubmenu">
+                        <li><a href="#" onclick="loadContent('inventory-query')">库存查询</a></li>
+                        <li><a href="#" onclick="loadContent('stock-check')">库存盘点</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="#salesSubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
+                        销售管理
+                    </a>
+                    <ul class="collapse list-unstyled" id="salesSubmenu">
+                        <li><a href="#" onclick="loadContent('sales-entry')">销售登记</a></li>
+                        <li><a href="#" onclick="loadContent('sales-return')">销售退货</a></li>
+                        <li><a href="#" onclick="loadContent('sales-query')">销售查询</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="#financeSubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
+                        财务统计
+                    </a>
+                    <ul class="collapse list-unstyled" id="financeSubmenu">
+                        <li><a href="#" onclick="event.preventDefault(); loadContent('daily-stats')">当日统计</a></li>
+                        <li><a href="#" onclick="event.preventDefault(); loadContent('monthly-stats')">当月统计</a></li>
+                    </ul>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- 页面主体内容 -->
+        <div id="content">
+            <nav class="navbar navbar-expand-lg navbar-light bg-light">
+                <div class="container-fluid">
+                    <button type="button" id="sidebarCollapse" class="btn btn-info">
+                        <span class="navbar-toggler-icon"></span>
+                    </button>
+                    <div class="ms-auto">
+                        <span class="navbar-text" id="welcomeMessage">
+                            欢迎, <span id="usernameDisplay">管理员</span> | <a href="#" class="logout" onclick="logout()">退出</a>
+                        </span>
+                    </div>
+                </div>
+            </nav>
+
+            <div id="main-content" class="container-fluid">
+                <!-- 动态加载的内容将显示在这里 -->
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html> 
