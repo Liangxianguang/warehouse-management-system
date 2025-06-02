@@ -1834,37 +1834,568 @@ app.get('/api/products/status', async (req, res) => {
     }
 }); 
 
-// 添加登录路由
-app.post('/api/login', (req, res) => {
-    const { username, password } = req.body;
-    
-    // 查询用户信息
-    const query = 'SELECT * FROM users WHERE Username = ? AND Password = ?';
-    pool.query(query, [username, password], (error, results) => {
-        if (error) {
-            console.error('Login error:', error);
-            res.status(500).json({ success: false, message: '服务器错误' });
-            return;
+// 权限验证中间件
+function checkPermission(permissionCode) {
+    return async (req, res, next) => {
+        try {
+            const userId = req.headers['x-user-id'];
+            if (!userId) {
+                return res.status(401).json({ error: '未授权访问' });
+            }
+
+            // 查询用户权限
+            const query = `
+                SELECT p.PermissionCode
+                FROM Users u
+                JOIN UserRoles ur ON u.UserID = ur.UserID
+                JOIN RolePermissions rp ON ur.RoleID = rp.RoleID
+                JOIN Permissions p ON rp.PermissionID = p.PermissionID
+                WHERE u.UserID = ? AND u.Status = 1 AND p.PermissionCode = ?
+            `;
+
+            const [results] = await pool.promise().query(query, [userId, permissionCode]);
+            
+            if (results.length === 0) {
+                return res.status(403).json({ error: '权限不足' });
+            }
+
+            next();
+        } catch (error) {
+            console.error('Permission check error:', error);
+            res.status(500).json({ error: '权限验证失败' });
+        }
+    };
+}
+
+// 修改登录路由，支持角色权限
+app.post('/api/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+        
+        // 查询用户信息及其角色权限
+        const userQuery = 'SELECT * FROM Users WHERE Username = ? AND Password = ? AND Status = 1';
+        const [userResults] = await pool.promise().query(userQuery, [username, password]);
+        
+        if (userResults.length === 0) {
+            return res.json({ success: false, message: '用户名或密码错误或账户已禁用' });
         }
         
-        if (results.length === 0) {
-            res.json({ success: false, message: '用户名或密码错误' });
-            return;
-        }
+        const user = userResults[0];
         
-        const user = results[0];
-        if (user.Status !== 1) {
-            res.json({ success: false, message: '账户已禁用' });
-            return;
-        }
+        // 查询用户的角色和权限
+        const permissionQuery = `
+            SELECT 
+                r.RoleName,
+                r.RoleDescription,
+                p.PermissionCode,
+                p.PermissionName,
+                p.ModuleName
+            FROM Users u
+            JOIN UserRoles ur ON u.UserID = ur.UserID
+            JOIN Roles r ON ur.RoleID = r.RoleID
+            JOIN RolePermissions rp ON r.RoleID = rp.RoleID
+            JOIN Permissions p ON rp.PermissionID = p.PermissionID
+            WHERE u.UserID = ? AND r.Status = 1
+        `;
         
-        // 返回用户信息
+        const [permissionResults] = await pool.promise().query(permissionQuery, [user.UserID]);
+        
+        // 组织权限数据
+        const roles = [];
+        const permissions = [];
+        const permissionsByModule = {};
+        
+        permissionResults.forEach(row => {
+            // 收集角色信息
+            if (!roles.find(r => r.name === row.RoleName)) {
+                roles.push({
+                    name: row.RoleName,
+                    description: row.RoleDescription
+                });
+            }
+            
+            // 收集权限信息
+            if (!permissions.includes(row.PermissionCode)) {
+                permissions.push(row.PermissionCode);
+            }
+            
+            // 按模块组织权限
+            if (!permissionsByModule[row.ModuleName]) {
+                permissionsByModule[row.ModuleName] = [];
+            }
+            if (!permissionsByModule[row.ModuleName].find(p => p.code === row.PermissionCode)) {
+                permissionsByModule[row.ModuleName].push({
+                    code: row.PermissionCode,
+                    name: row.PermissionName
+                });
+            }
+        });
+        
+        // 更新最后登录时间
+        await pool.promise().query(
+            'UPDATE Users SET LastLogin = NOW() WHERE UserID = ?',
+            [user.UserID]
+        );
+        
+        // 返回用户信息和权限
         res.json({
             success: true,
-            userId: user.UserID,
-            username: user.Username,
-            role: user.Role,
-            status: user.Status
+            user: {
+                userId: user.UserID,
+                username: user.Username,
+                fullName: user.FullName,
+                email: user.Email,
+                phoneNumber: user.PhoneNumber,
+                roles: roles,
+                permissions: permissions,
+                permissionsByModule: permissionsByModule
+            }
         });
-    });
+        
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ success: false, message: '服务器错误' });
+    }
+});
+
+// 用户管理API
+
+// 获取所有用户
+app.get('/api/users', async (req, res) => {
+    try {
+        const [users] = await pool.promise().query(`
+            SELECT u.*, GROUP_CONCAT(r.RoleName SEPARATOR ', ') AS Role
+            FROM users u
+            LEFT JOIN userroles ur ON u.UserID = ur.UserID
+            LEFT JOIN roles r ON ur.RoleID = r.RoleID
+            GROUP BY u.UserID
+        `);
+        res.json(users);
+    } catch (err) {
+        console.error('获取用户列表失败:', err);
+        res.status(500).json({ message: '获取用户列表失败', error: err.message });
+    }
+});
+
+// 获取单个用户
+app.get('/api/users/:id', async (req, res) => {
+    try {
+        const userId = req.params.id;
+        
+        // 获取用户基本信息
+        const [users] = await pool.promise().query('SELECT * FROM users WHERE UserID = ?', [userId]);
+        
+        if (users.length === 0) {
+            return res.status(404).json({ message: '用户不存在' });
+        }
+        
+        const user = users[0];
+        
+        // 获取用户角色
+        const [roles] = await pool.promise().query(`
+            SELECT r.* 
+            FROM roles r
+            JOIN userroles ur ON r.RoleID = ur.RoleID
+            WHERE ur.UserID = ?
+        `, [userId]);
+        
+        user.Roles = roles;
+        
+        res.json(user);
+    } catch (err) {
+        console.error('获取用户信息失败:', err);
+        res.status(500).json({ message: '获取用户信息失败', error: err.message });
+    }
+});
+
+// 添加用户
+app.post('/api/users', async (req, res) => {
+    try {
+        const { username, password, fullName, email, phoneNumber, roles } = req.body;
+        
+        // 验证必填字段
+        if (!username || !password) {
+            return res.status(400).json({ message: '用户名和密码为必填项' });
+        }
+        
+        // 检查用户名是否已存在
+        const [existingUsers] = await pool.promise().query('SELECT * FROM users WHERE Username = ?', [username]);
+        if (existingUsers.length > 0) {
+            return res.status(400).json({ message: '用户名已存在' });
+        }
+        
+        // 开始事务
+        await pool.promise().query('START TRANSACTION');
+            
+            // 插入用户
+        const [result] = await pool.promise().query(`
+            INSERT INTO users (Username, Password, FullName, Email, PhoneNumber, Status, CreatedAt)
+            VALUES (?, ?, ?, ?, ?, 1, NOW())
+        `, [username, password, fullName, email, phoneNumber]);
+        
+        const userId = result.insertId;
+        
+        // 添加用户角色
+        if (roles && roles.length > 0) {
+            const roleValues = roles.map(roleId => [userId, roleId]);
+            await pool.promise().query('INSERT INTO userroles (UserID, RoleID) VALUES ?', [roleValues]);
+        }
+        
+        // 提交事务
+        await pool.promise().query('COMMIT');
+        
+        res.status(201).json({ message: '用户创建成功', userId });
+    } catch (err) {
+        // 回滚事务
+        await pool.promise().query('ROLLBACK');
+        console.error('创建用户失败:', err);
+        res.status(500).json({ message: '创建用户失败', error: err.message });
+    }
+});
+
+// 更新用户
+app.put('/api/users/:id', async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const { username, password, fullName, email, phoneNumber, status, roles } = req.body;
+        
+        // 验证必填字段
+        if (!username) {
+            return res.status(400).json({ message: '用户名为必填项' });
+        }
+        
+        // 检查用户名是否已存在（排除当前用户）
+        const [existingUsers] = await pool.promise().query('SELECT * FROM users WHERE Username = ? AND UserID != ?', [username, userId]);
+        if (existingUsers.length > 0) {
+            return res.status(400).json({ message: '用户名已存在' });
+        }
+        
+        // 开始事务
+        await pool.promise().query('START TRANSACTION');
+            
+            // 更新用户基本信息
+        let updateQuery = `
+            UPDATE users 
+            SET Username = ?, FullName = ?, Email = ?, PhoneNumber = ?, Status = ?
+            WHERE UserID = ?
+        `;
+        let params = [username, fullName, email, phoneNumber, status, userId];
+        
+        // 如果提供了密码，则更新密码
+            if (password) {
+            updateQuery = `
+                UPDATE users 
+                SET Username = ?, Password = ?, FullName = ?, Email = ?, PhoneNumber = ?, Status = ?
+                WHERE UserID = ?
+            `;
+            params = [username, password, fullName, email, phoneNumber, status, userId];
+        }
+        
+        await pool.promise().query(updateQuery, params);
+        
+        // 更新用户角色
+        if (roles && roles.length > 0) {
+            // 删除旧角色
+            await pool.promise().query('DELETE FROM userroles WHERE UserID = ?', [userId]);
+            
+            // 添加新角色
+            const roleValues = roles.map(roleId => [userId, roleId]);
+            await pool.promise().query('INSERT INTO userroles (UserID, RoleID) VALUES ?', [roleValues]);
+        }
+        
+        // 提交事务
+        await pool.promise().query('COMMIT');
+        
+        res.json({ message: '用户更新成功' });
+    } catch (err) {
+        // 回滚事务
+        await pool.promise().query('ROLLBACK');
+        console.error('更新用户失败:', err);
+        res.status(500).json({ message: '更新用户失败', error: err.message });
+    }
+});
+
+// 删除用户
+app.delete('/api/users/:id', async (req, res) => {
+    try {
+        const userId = req.params.id;
+        
+        // 检查是否为系统管理员账号
+        if (userId == 1) {
+            return res.status(403).json({ message: '不能删除系统管理员账号' });
+        }
+        
+        // 开始事务
+        await pool.promise().query('START TRANSACTION');
+        
+        // 删除用户角色
+        await pool.promise().query('DELETE FROM userroles WHERE UserID = ?', [userId]);
+        
+        // 删除用户
+        await pool.promise().query('DELETE FROM users WHERE UserID = ?', [userId]);
+        
+        // 提交事务
+        await pool.promise().query('COMMIT');
+        
+        res.json({ message: '用户删除成功' });
+    } catch (err) {
+        // 回滚事务
+        await pool.promise().query('ROLLBACK');
+        console.error('删除用户失败:', err);
+        res.status(500).json({ message: '删除用户失败', error: err.message });
+    }
+});
+
+// 角色管理API
+
+// 获取所有角色
+app.get('/api/roles', async (req, res) => {
+    try {
+        const [roles] = await pool.promise().query(`
+            SELECT r.*, COUNT(ur.UserID) AS UserCount
+            FROM roles r
+            LEFT JOIN userroles ur ON r.RoleID = ur.RoleID
+            GROUP BY r.RoleID
+        `);
+        res.json(roles);
+    } catch (err) {
+        console.error('获取角色列表失败:', err);
+        res.status(500).json({ message: '获取角色列表失败', error: err.message });
+    }
+});
+
+// 获取单个角色
+app.get('/api/roles/:id', async (req, res) => {
+    try {
+        const roleId = req.params.id;
+        
+        const [roles] = await pool.promise().query('SELECT * FROM roles WHERE RoleID = ?', [roleId]);
+        
+        if (roles.length === 0) {
+            return res.status(404).json({ message: '角色不存在' });
+        }
+        
+        res.json(roles[0]);
+    } catch (err) {
+        console.error('获取角色信息失败:', err);
+        res.status(500).json({ message: '获取角色信息失败', error: err.message });
+    }
+});
+
+// 添加角色
+app.post('/api/roles', async (req, res) => {
+    try {
+        const { roleName, description } = req.body;
+        
+        // 验证必填字段
+        if (!roleName) {
+            return res.status(400).json({ message: '角色名称为必填项' });
+        }
+        
+        // 检查角色名是否已存在
+        const [existingRoles] = await pool.promise().query('SELECT * FROM roles WHERE RoleName = ?', [roleName]);
+        if (existingRoles.length > 0) {
+            return res.status(400).json({ message: '角色名称已存在' });
+        }
+        
+        // 插入角色
+        const [result] = await pool.promise().query(`
+            INSERT INTO roles (RoleName, RoleDescription, Status, CreatedAt)
+            VALUES (?, ?, 1, NOW())
+        `, [roleName, description]);
+        
+        res.status(201).json({ message: '角色创建成功', roleId: result.insertId });
+    } catch (err) {
+        console.error('创建角色失败:', err);
+        res.status(500).json({ message: '创建角色失败', error: err.message });
+    }
+});
+
+// 更新角色
+app.put('/api/roles/:id', async (req, res) => {
+    try {
+        const roleId = req.params.id;
+        const { roleName, description, status } = req.body;
+        
+        // 验证必填字段
+        if (!roleName) {
+            return res.status(400).json({ message: '角色名称为必填项' });
+        }
+        
+        // 检查角色名是否已存在（排除当前角色）
+        const [existingRoles] = await pool.promise().query('SELECT * FROM roles WHERE RoleName = ? AND RoleID != ?', [roleName, roleId]);
+        if (existingRoles.length > 0) {
+            return res.status(400).json({ message: '角色名称已存在' });
+        }
+        
+        // 更新角色
+        await pool.promise().query(`
+            UPDATE roles 
+            SET RoleName = ?, Description = ?, Status = ?
+            WHERE RoleID = ?
+        `, [roleName, description, status, roleId]);
+        
+        res.json({ message: '角色更新成功' });
+    } catch (err) {
+        console.error('更新角色失败:', err);
+        res.status(500).json({ message: '更新角色失败', error: err.message });
+    }
+});
+
+// 删除角色
+app.delete('/api/roles/:id', async (req, res) => {
+    try {
+        const roleId = req.params.id;
+        
+        // 检查是否为系统管理员角色
+        if (roleId == 1) {
+            return res.status(403).json({ message: '不能删除系统管理员角色' });
+        }
+        
+        // 开始事务
+        await pool.promise().query('START TRANSACTION');
+        
+        // 删除角色权限
+        await pool.promise().query('DELETE FROM rolepermissions WHERE RoleID = ?', [roleId]);
+        
+        // 删除用户角色关联
+        await pool.promise().query('DELETE FROM userroles WHERE RoleID = ?', [roleId]);
+        
+        // 删除角色
+        await pool.promise().query('DELETE FROM roles WHERE RoleID = ?', [roleId]);
+        
+        // 提交事务
+        await pool.promise().query('COMMIT');
+        
+        res.json({ message: '角色删除成功' });
+    } catch (err) {
+        // 回滚事务
+        await pool.promise().query('ROLLBACK');
+        console.error('删除角色失败:', err);
+        res.status(500).json({ message: '删除角色失败', error: err.message });
+    }
+});
+
+// 获取所有权限
+app.get('/api/permissions', async (req, res) => {
+    try {
+        // 修改查询，直接从permissions表获取数据，使用ModuleName字段
+        const [permissions] = await pool.promise().query(`
+            SELECT p.*, p.ModuleName
+            FROM permissions p
+            ORDER BY p.ModuleName, p.PermissionID
+        `);
+        res.json(permissions);
+    } catch (err) {
+        console.error('获取权限列表失败:', err);
+        res.status(500).json({ message: '获取权限列表失败', error: err.message });
+    }
+});
+
+// 获取角色权限
+app.get('/api/roles/:id/permissions', async (req, res) => {
+    try {
+        const roleId = req.params.id;
+        
+        // 修改查询，直接从permissions表获取数据，使用ModuleName字段
+        const [permissions] = await pool.promise().query(`
+            SELECT p.*, p.ModuleName
+            FROM permissions p
+            JOIN rolepermissions rp ON p.PermissionID = rp.PermissionID
+            WHERE rp.RoleID = ?
+            ORDER BY p.ModuleName, p.PermissionID
+        `, [roleId]);
+        
+        res.json(permissions);
+    } catch (err) {
+        console.error('获取角色权限失败:', err);
+        res.status(500).json({ message: '获取角色权限失败', error: err.message });
+    }
+});
+
+// 更新角色权限
+app.put('/api/roles/:id/permissions', async (req, res) => {
+    try {
+        const roleId = req.params.id;
+        const { permissions } = req.body;
+        
+        // 开始事务
+        await pool.promise().query('START TRANSACTION');
+        
+        // 删除旧权限
+        await pool.promise().query('DELETE FROM rolepermissions WHERE RoleID = ?', [roleId]);
+        
+        // 添加新权限
+        if (permissions && permissions.length > 0) {
+            const permissionValues = permissions.map(permissionId => [roleId, permissionId]);
+            await pool.promise().query('INSERT INTO rolepermissions (RoleID, PermissionID) VALUES ?', [permissionValues]);
+        }
+        
+        // 提交事务
+        await pool.promise().query('COMMIT');
+        
+        res.json({ message: '角色权限更新成功' });
+    } catch (err) {
+        // 回滚事务
+        await pool.promise().query('ROLLBACK');
+        console.error('更新角色权限失败:', err);
+        res.status(500).json({ message: '更新角色权限失败', error: err.message });
+    }
+});
+
+// 修改登录API，返回用户权限信息
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    
+    try {
+        // 查询用户
+        const [users] = await pool.promise().query('SELECT * FROM users WHERE Username = ? AND Password = ?', [username, password]);
+        
+        if (users.length === 0) {
+            return res.status(401).json({ success: false, message: '用户名或密码错误' });
+        }
+        
+        const user = users[0];
+        
+        // 查询用户角色
+        const [roles] = await pool.promise().query(`
+            SELECT r.* 
+            FROM roles r
+            JOIN userroles ur ON r.RoleID = ur.RoleID
+            WHERE ur.UserID = ?
+        `, [user.UserID]);
+        
+        // 查询用户权限
+        const [permissions] = await pool.promise().query(`
+            SELECT DISTINCT p.PermissionCode
+            FROM permissions p
+            JOIN rolepermissions rp ON p.PermissionID = rp.PermissionID
+            JOIN userroles ur ON rp.RoleID = ur.RoleID
+            WHERE ur.UserID = ?
+        `, [user.UserID]);
+        
+        // 提取权限代码
+        const permissionCodes = permissions.map(p => p.PermissionCode);
+        
+        // 更新最后登录时间
+        await pool.promise().query('UPDATE users SET LastLogin = NOW() WHERE UserID = ?', [user.UserID]);
+        
+        // 返回用户信息和权限
+        res.json({
+            success: true,
+            user: {
+                userId: user.UserID,
+                username: user.Username,
+                fullName: user.FullName,
+                email: user.Email,
+                phoneNumber: user.PhoneNumber,
+                status: user.Status,
+                roles: roles,
+                permissions: permissionCodes
+            }
+        });
+    } catch (err) {
+        console.error('登录失败:', err);
+        res.status(500).json({ success: false, message: '登录失败', error: err.message });
+    }
 });

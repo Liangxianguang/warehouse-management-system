@@ -43,24 +43,26 @@ async function login() {
 
         const data = await response.json();
         if (data.success) {
-            // 完整保存用户信息 
-            currentUser = {
-                userId: data.userId,
-                username: data.username,
-                role: data.role,
-                status: data.status
-            };
+            // 保存用户信息
+            currentUser = data.user;
             
-            // 保存到localStorage
+            // 保存到本地存储
             localStorage.setItem('currentUser', JSON.stringify(currentUser));
             
+            // 更新欢迎信息 - 使用正确的元素ID
+            const usernameDisplay = document.getElementById('usernameDisplay');
+            if (usernameDisplay) {
+                usernameDisplay.textContent = currentUser.fullName || currentUser.username;
+            }
+            
+            // 加载仪表板
             loadDashboardPage();
         } else {
-            alert(data.message || '登录失败');
+            alert(data.message || '登录失败，请检查用户名和密码');
         }
     } catch (error) {
-        console.error('Error during login:', error);
-        alert('登录请求失败');
+        console.error('登录失败:', error);
+        alert('登录失败: ' + error.message);
     }
 }
 // 加载登录页面
@@ -105,6 +107,32 @@ function checkPermission(page) {
         return false;
     }
 
+    // 如果用户有permissions属性，使用新的权限系统
+    if (currentUser.permissions) {
+        const pagePermissionMap = {
+            'products': 'products_manage',
+            'employees': 'employees_manage',
+            'customers': 'customers_manage',
+            'suppliers': 'suppliers_manage',
+            'users': 'users_manage',
+            'roles': 'users_manage', // 角色管理也需要用户管理权限
+            'purchase-entry': 'purchase_entry',
+            'purchase-query': 'purchase_query',
+            'warehouse': 'inventory_query',
+            'inventory-query': 'inventory_query',
+            'stock-check': 'stock_check',
+            'sales-entry': 'sales_entry',
+            'sales-return': 'sales_return',
+            'sales-query': 'sales_query',
+            'daily-stats': 'daily_stats',
+            'monthly-stats': 'monthly_stats'
+        };
+        
+        const requiredPermission = pagePermissionMap[page];
+        return !requiredPermission || currentUser.permissions.includes(requiredPermission);
+    }
+
+    // 旧的基于角色的权限系统（兼容）
     switch (currentUser.role) {
         case 'admin':
             return true; // 管理员可以访问所有页面
@@ -377,6 +405,10 @@ function loadContent(page) {
             break;
         case 'monthly-stats':
             loadMonthlyStatsPage();
+            break;
+        case 'users':
+        case 'roles':
+            loadUsersPage();  // 整合的用户权限管理页面
             break;
         default:
             loadDashboardPage();
@@ -4355,4 +4387,1020 @@ async function loadDailyStats() {
     }
 }
 
+function loadUsersPage() {
+    const content = `
+        <div class="container-fluid">
+            ${createPageHeader('用户权限管理')}
+            
+            <!-- 标签页导航 -->
+            <ul class="nav nav-tabs mb-4" id="userManagementTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="users-tab" data-bs-toggle="tab" data-bs-target="#users-content" 
+                            type="button" role="tab" aria-controls="users-content" aria-selected="true">
+                        <i class="bi bi-people me-1"></i> 用户管理
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="roles-tab" data-bs-toggle="tab" data-bs-target="#roles-content" 
+                            type="button" role="tab" aria-controls="roles-content" aria-selected="false">
+                        <i class="bi bi-shield-lock me-1"></i> 角色权限
+                    </button>
+                </li>
+            </ul>
+            
+            <!-- 标签页内容 -->
+            <div class="tab-content" id="userManagementTabContent">
+                <!-- 用户管理标签页 -->
+                <div class="tab-pane fade show active" id="users-content" role="tabpanel" aria-labelledby="users-tab">
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-white">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">用户列表</h5>
+                                <button class="btn btn-primary" onclick="showAddUserModal()">
+                                    <i class="bi bi-plus-circle me-1"></i> 添加用户
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>用户名</th>
+                                            <th>姓名</th>
+                                            <th>邮箱</th>
+                                            <th>电话</th>
+                                            <th>角色</th>
+                                            <th>状态</th>
+                                            <th>创建时间</th>
+                                            <th>最后登录</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="usersList">
+                                        <tr>
+                                            <td colspan="10" class="text-center">加载中...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 角色管理标签页 -->
+                <div class="tab-pane fade" id="roles-content" role="tabpanel" aria-labelledby="roles-tab">
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-header bg-white">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">角色列表</h5>
+                                <button class="btn btn-primary" onclick="showAddRoleModal()">
+                                    <i class="bi bi-plus-circle me-1"></i> 添加角色
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>角色名称</th>
+                                            <th>描述</th>
+                                            <th>状态</th>
+                                            <th>用户数</th>
+                                            <th>创建时间</th>
+                                            <th>操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="rolesList">
+                                        <tr>
+                                            <td colspan="7" class="text-center">加载中...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 添加用户模态框 -->
+        <div class="modal fade" id="addUserModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">添加用户</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="addUserForm">
+                            <div class="mb-3">
+                                <label for="username" class="form-label">用户名 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="username" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="password" class="form-label">密码 <span class="text-danger">*</span></label>
+                                <input type="password" class="form-control" id="password" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="fullName" class="form-label">姓名</label>
+                                <input type="text" class="form-control" id="fullName">
+                            </div>
+                            <div class="mb-3">
+                                <label for="email" class="form-label">邮箱</label>
+                                <input type="email" class="form-control" id="email">
+                            </div>
+                            <div class="mb-3">
+                                <label for="phoneNumber" class="form-label">电话</label>
+                                <input type="text" class="form-control" id="phoneNumber">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">角色 <span class="text-danger">*</span></label>
+                                <div id="roleCheckboxes" class="border rounded p-3">
+                                    <div class="text-center text-muted">加载中...</div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="saveUser()">保存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 编辑用户模态框 -->
+        <div class="modal fade" id="editUserModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">编辑用户</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="editUserForm">
+                            <input type="hidden" id="editUserId">
+                            <div class="mb-3">
+                                <label for="editUsername" class="form-label">用户名 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editUsername" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="editPassword" class="form-label">密码 (留空表示不修改)</label>
+                                <input type="password" class="form-control" id="editPassword">
+                            </div>
+                            <div class="mb-3">
+                                <label for="editFullName" class="form-label">姓名</label>
+                                <input type="text" class="form-control" id="editFullName">
+                            </div>
+                            <div class="mb-3">
+                                <label for="editEmail" class="form-label">邮箱</label>
+                                <input type="email" class="form-control" id="editEmail">
+                            </div>
+                            <div class="mb-3">
+                                <label for="editPhoneNumber" class="form-label">电话</label>
+                                <input type="text" class="form-control" id="editPhoneNumber">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">状态</label>
+                                <select class="form-select" id="editStatus">
+                                    <option value="1">启用</option>
+                                    <option value="0">禁用</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">角色 <span class="text-danger">*</span></label>
+                                <div id="editRoleCheckboxes" class="border rounded p-3">
+                                    <div class="text-center text-muted">加载中...</div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="updateUser()">保存更改</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 添加角色模态框 -->
+        <div class="modal fade" id="addRoleModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">添加角色</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="addRoleForm">
+                            <div class="mb-3">
+                                <label for="roleName" class="form-label">角色名称 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="roleName" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="roleDescription" class="form-label">角色描述</label>
+                                <textarea class="form-control" id="roleDescription" rows="2"></textarea>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="saveRole()">保存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 角色权限模态框 -->
+        <div class="modal fade" id="rolePermissionsModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">角色权限设置 - <span id="roleNameTitle"></span></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" id="permissionRoleId">
+                        <div id="permissionsList">
+                            <div class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">加载中...</span>
+                                </div>
+                                <p class="mt-2">正在加载权限数据...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="saveRolePermissions()">保存权限设置</button>
+                    </div>
+                </div>
+            </div>
+        </div>
 
+        <div class="modal fade" id="editRoleModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">编辑角色</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <form id="editRoleForm">
+                            <input type="hidden" id="editRoleId">
+                            <div class="mb-3">
+                                <label for="editRoleName" class="form-label">角色名称 <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" id="editRoleName" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="editRoleDescription" class="form-label">角色描述</label>
+                                <textarea class="form-control" id="editRoleDescription" rows="2"></textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label for="editRoleStatus" class="form-label">状态</label>
+                                <select class="form-select" id="editRoleStatus">
+                                    <option value="1">启用</option>
+                                    <option value="0">禁用</option>
+                                </select>
+                            </div>
+                        </form>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="updateRole()">保存更改</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('main-content').innerHTML = content;
+    
+    // 加载用户数据和角色数据
+    loadUsersData();
+    loadRolesData();
+    loadRolesForCheckboxes();
+}
+// 加载用户数据
+// 加载用户数据
+async function loadUsersData() {
+    try {
+        const response = await fetch('http://localhost:3000/api/users');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        
+        const usersList = document.getElementById('usersList');
+        if (!usersList) return; // 如果元素不存在，可能页面已经切换
+        
+        if (data.length === 0) {
+            usersList.innerHTML = '<tr><td colspan="10" class="text-center">暂无用户数据</td></tr>';
+            return;
+        }
+        
+        let html = '';
+        data.forEach(user => {
+            const status = user.Status === 1 ? 
+                '<span class="badge bg-success">启用</span>' : 
+                '<span class="badge bg-danger">禁用</span>';
+                
+            html += `
+                <tr>
+                    <td>${user.UserID}</td>
+                    <td>${user.Username}</td>
+                    <td>${user.FullName || '-'}</td>
+                    <td>${user.Email || '-'}</td>
+                    <td>${user.PhoneNumber || '-'}</td>
+                    <td>${user.Role || '-'}</td>
+                    <td>${status}</td>
+                    <td>${formatDate(user.CreatedAt)}</td>
+                    <td>${user.LastLogin ? formatDate(user.LastLogin) : '-'}</td>
+                    <td>
+                        <button class="btn btn-primary me-2" onclick="showEditUserModal(${user.UserID})"
+                               data-bs-toggle="tooltip" title="编辑用户信息">
+                            <i class="bi bi-pencil"></i> 编辑
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteUser(${user.UserID})"
+                               data-bs-toggle="tooltip" title="删除用户">
+                            <i class="bi bi-trash"></i> 删除
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        usersList.innerHTML = html;
+        
+        // 初始化所有工具提示
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    } catch (error) {
+        console.error('获取用户数据失败:', error);
+        const usersList = document.getElementById('usersList');
+        if (usersList) {
+            usersList.innerHTML = `<tr><td colspan="10" class="text-center text-danger">获取用户数据失败: ${error.message}</td></tr>`;
+        }
+    }
+}
+
+// 加载角色数据
+async function loadRolesData() {
+    try {
+        const response = await fetch('http://localhost:3000/api/roles');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        
+        const rolesList = document.getElementById('rolesList');
+        if (!rolesList) return; // 如果元素不存在，可能页面已经切换
+        
+        if (data.length === 0) {
+            rolesList.innerHTML = '<tr><td colspan="7" class="text-center">暂无角色数据</td></tr>';
+            return;
+        }
+        
+        let html = '';
+        data.forEach(role => {
+            const status = role.Status === 1 ? 
+                '<span class="badge bg-success">启用</span>' : 
+                '<span class="badge bg-danger">禁用</span>';
+                
+            html += `
+                <tr>
+                    <td>${role.RoleID}</td>
+                    <td>${role.RoleName}</td>
+                    <td>${role.Description || '-'}</td>
+                    <td>${status}</td>
+                    <td>${role.UserCount || 0}</td>
+                    <td>${formatDate(role.CreatedAt)}</td>
+                    <td>
+                        <button class="btn btn-info me-2" onclick="showRolePermissions(${role.RoleID}, '${role.RoleName}')" 
+                               data-bs-toggle="tooltip" title="设置角色权限">
+                            <i class="bi bi-shield"></i> 权限设置
+                        </button>
+                        <button class="btn btn-primary me-2" onclick="showEditRoleModal(${role.RoleID})"
+                               data-bs-toggle="tooltip" title="编辑角色信息">
+                            <i class="bi bi-pencil"></i> 编辑
+                        </button>
+                        <button class="btn btn-danger" onclick="deleteRole(${role.RoleID})"
+                               data-bs-toggle="tooltip" title="删除角色">
+                            <i class="bi bi-trash"></i> 删除
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        rolesList.innerHTML = html;
+        
+        // 初始化所有工具提示
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    } catch (error) {
+        console.error('获取角色数据失败:', error);
+        const rolesList = document.getElementById('rolesList');
+        if (rolesList) {
+            rolesList.innerHTML = `<tr><td colspan="7" class="text-center text-danger">获取角色数据失败: ${error.message}</td></tr>`;
+        }
+    }
+}
+
+// 加载角色复选框
+async function loadRolesForCheckboxes() {
+    try {
+        const response = await fetch('http://localhost:3000/api/roles');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        
+        const roleCheckboxes = document.getElementById('roleCheckboxes');
+        const editRoleCheckboxes = document.getElementById('editRoleCheckboxes');
+        
+        if (data.length === 0) {
+            if (roleCheckboxes) roleCheckboxes.innerHTML = '<div class="text-center text-muted">暂无角色数据</div>';
+            if (editRoleCheckboxes) editRoleCheckboxes.innerHTML = '<div class="text-center text-muted">暂无角色数据</div>';
+            return;
+        }
+        
+        let html = '';
+        data.forEach(role => {
+            if (role.Status === 1) { // 只显示启用的角色
+                html += `
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" value="${role.RoleID}" id="role_${role.RoleID}" name="roles">
+                        <label class="form-check-label" for="role_${role.RoleID}">
+                            ${role.RoleName}
+                        </label>
+                    </div>
+                `;
+            }
+        });
+        
+        if (roleCheckboxes) roleCheckboxes.innerHTML = html;
+        if (editRoleCheckboxes) editRoleCheckboxes.innerHTML = html;
+    } catch (error) {
+        console.error('获取角色数据失败:', error);
+        const roleCheckboxes = document.getElementById('roleCheckboxes');
+        const editRoleCheckboxes = document.getElementById('editRoleCheckboxes');
+        
+        if (roleCheckboxes) {
+            roleCheckboxes.innerHTML = `<div class="text-center text-danger">获取角色数据失败: ${error.message}</div>`;
+        }
+        if (editRoleCheckboxes) {
+            editRoleCheckboxes.innerHTML = `<div class="text-center text-danger">获取角色数据失败: ${error.message}</div>`;
+        }
+    }
+}
+
+// 显示添加用户模态框
+function showAddUserModal() {
+    // 重置表单
+    document.getElementById('addUserForm').reset();
+    
+    // 加载角色数据
+    loadRolesForCheckboxes();
+    
+    // 显示模态框
+    const modal = new bootstrap.Modal(document.getElementById('addUserModal'));
+    modal.show();
+}
+
+// 显示编辑用户模态框
+async function showEditUserModal(userId) {
+    try {
+        // 获取用户数据
+        const response = await fetch(`http://localhost:3000/api/users/${userId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const user = await response.json();
+        
+        // 填充表单
+        document.getElementById('editUserId').value = user.UserID;
+        document.getElementById('editUsername').value = user.Username;
+        document.getElementById('editPassword').value = ''; // 不显示密码
+        document.getElementById('editFullName').value = user.FullName || '';
+        document.getElementById('editEmail').value = user.Email || '';
+        document.getElementById('editPhoneNumber').value = user.PhoneNumber || '';
+        document.getElementById('editStatus').value = user.Status;
+        
+        // 加载角色数据
+        await loadRolesForCheckboxes();
+        
+        // 选中用户的角色
+        if (user.Roles && user.Roles.length > 0) {
+            user.Roles.forEach(role => {
+                const checkbox = document.getElementById(`role_${role.RoleID}`);
+                if (checkbox) checkbox.checked = true;
+            });
+        }
+        
+        // 显示模态框
+        const modal = new bootstrap.Modal(document.getElementById('editUserModal'));
+        modal.show();
+    } catch (error) {
+        console.error('获取用户信息失败:', error);
+        alert(`获取用户信息失败: ${error.message}`);
+    }
+}
+
+// 保存用户
+async function saveUser() {
+    try {
+        // 获取表单数据
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value.trim();
+        const fullName = document.getElementById('fullName').value.trim();
+        const email = document.getElementById('email').value.trim();
+        const phoneNumber = document.getElementById('phoneNumber').value.trim();
+        
+        // 获取选中的角色
+        const roleCheckboxes = document.querySelectorAll('input[name="roles"]:checked');
+        const roles = Array.from(roleCheckboxes).map(cb => parseInt(cb.value));
+        
+        // 验证必填字段
+        if (!username || !password) {
+            alert('请填写必填字段');
+            return;
+        }
+        
+        if (roles.length === 0) {
+            alert('请至少选择一个角色');
+            return;
+        }
+        
+        // 发送请求
+        const response = await fetch('http://localhost:3000/api/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                username,
+                password,
+                fullName,
+                email,
+                phoneNumber,
+                roles
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        // 关闭模态框
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addUserModal'));
+        modal.hide();
+        
+        // 重新加载用户数据
+        loadUsersData();
+        
+        // 显示成功消息
+        showToast('成功', '用户添加成功', 'success');
+    } catch (error) {
+        console.error('添加用户失败:', error);
+        alert(`添加用户失败: ${error.message}`);
+    }
+}
+
+// 更新用户
+async function updateUser() {
+    try {
+        // 获取表单数据
+        const userId = document.getElementById('editUserId').value;
+        const username = document.getElementById('editUsername').value.trim();
+        const password = document.getElementById('editPassword').value.trim();
+        const fullName = document.getElementById('editFullName').value.trim();
+        const email = document.getElementById('editEmail').value.trim();
+        const phoneNumber = document.getElementById('editPhoneNumber').value.trim();
+        const status = document.getElementById('editStatus').value;
+        
+        // 获取选中的角色
+        const roleCheckboxes = document.querySelectorAll('#editRoleCheckboxes input[type="checkbox"]:checked');
+        const roles = Array.from(roleCheckboxes).map(cb => parseInt(cb.value));
+        
+        // 验证必填字段
+        if (!username) {
+            alert('请填写用户名');
+            return;
+        }
+        
+        if (roles.length === 0) {
+            alert('请至少选择一个角色');
+            return;
+        }
+        
+        // 构建请求数据
+        const userData = {
+            username,
+            fullName,
+            email,
+            phoneNumber,
+            status,
+            roles
+        };
+        
+        // 如果提供了密码，则添加到请求数据中
+        if (password) {
+            userData.password = password;
+        }
+        
+        // 发送请求
+        const response = await fetch(`http://localhost:3000/api/users/${userId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(userData)
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        // 关闭模态框
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editUserModal'));
+        modal.hide();
+        
+        // 重新加载用户数据
+        loadUsersData();
+        
+        // 显示成功消息
+        showToast('成功', '用户更新成功', 'success');
+    } catch (error) {
+        console.error('更新用户失败:', error);
+        alert(`更新用户失败: ${error.message}`);
+    }
+}
+
+// 删除用户
+async function deleteUser(userId) {
+    if (!confirm('确定要删除此用户吗？此操作不可撤销。')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`http://localhost:3000/api/users/${userId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        // 重新加载用户数据
+        loadUsersData();
+        
+        // 显示成功消息
+        showToast('成功', '用户删除成功', 'success');
+    } catch (error) {
+        console.error('删除用户失败:', error);
+        alert(`删除用户失败: ${error.message}`);
+    }
+}
+
+// 显示添加角色模态框
+function showAddRoleModal() {
+    // 重置表单
+    document.getElementById('addRoleForm').reset();
+    
+    // 显示模态框
+    const modal = new bootstrap.Modal(document.getElementById('addRoleModal'));
+    modal.show();
+}
+
+// 显示编辑角色模态框
+async function showEditRoleModal(roleId) {
+    try {
+        // 获取角色数据
+        const response = await fetch(`http://localhost:3000/api/roles/${roleId}`);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const role = await response.json();
+        
+        // 填充表单
+        document.getElementById('editRoleId').value = role.RoleID;
+        document.getElementById('editRoleName').value = role.RoleName;
+        document.getElementById('editRoleDescription').value = role.Description || '';
+        document.getElementById('editRoleStatus').value = role.Status;
+        
+        // 显示模态框
+        const modal = new bootstrap.Modal(document.getElementById('editRoleModal'));
+        modal.show();
+    } catch (error) {
+        console.error('获取角色信息失败:', error);
+        alert(`获取角色信息失败: ${error.message}`);
+    }
+}
+
+// 保存角色
+async function saveRole() {
+    try {
+        // 获取表单数据
+        const roleName = document.getElementById('roleName').value.trim();
+        const roleDescription = document.getElementById('roleDescription').value.trim();
+        
+        // 验证必填字段
+        if (!roleName) {
+            alert('请填写角色名称');
+            return;
+        }
+        
+        // 发送请求
+        const response = await fetch('http://localhost:3000/api/roles', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                roleName,
+                description: roleDescription
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        // 关闭模态框
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addRoleModal'));
+        modal.hide();
+        
+        // 重新加载角色数据
+        loadRolesData();
+        loadRolesForCheckboxes();
+        
+        // 显示成功消息
+        showToast('成功', '角色添加成功', 'success');
+    } catch (error) {
+        console.error('添加角色失败:', error);
+        alert(`添加角色失败: ${error.message}`);
+    }
+}
+
+// 删除角色
+async function deleteRole(roleId) {
+    if (!confirm('确定要删除此角色吗？此操作不可撤销。')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`http://localhost:3000/api/roles/${roleId}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        // 重新加载角色数据
+        loadRolesData();
+        loadRolesForCheckboxes();
+        
+        // 显示成功消息
+        showToast('成功', '角色删除成功', 'success');
+    } catch (error) {
+        console.error('删除角色失败:', error);
+        alert(`删除角色失败: ${error.message}`);
+    }
+}
+
+// 更新角色
+async function updateRole() {
+    try {
+        // 获取表单数据
+        const roleId = document.getElementById('editRoleId').value;
+        const roleName = document.getElementById('editRoleName').value.trim();
+        const roleDescription = document.getElementById('editRoleDescription').value.trim();
+        const status = document.getElementById('editRoleStatus').value;
+        
+        // 验证必填字段
+        if (!roleName) {
+            alert('请填写角色名称');
+            return;
+        }
+        
+        // 发送请求
+        const response = await fetch(`http://localhost:3000/api/roles/${roleId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                roleName,
+                description: roleDescription,
+                status
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        // 关闭模态框
+        const modal = bootstrap.Modal.getInstance(document.getElementById('editRoleModal'));
+        modal.hide();
+        
+        // 重新加载角色数据
+        loadRolesData();
+        loadRolesForCheckboxes();
+        
+        // 显示成功消息
+        showToast('成功', '角色更新成功', 'success');
+    } catch (error) {
+        console.error('更新角色失败:', error);
+        alert(`更新角色失败: ${error.message}`);
+    }
+}
+
+// 显示角色权限设置
+async function showRolePermissions(roleId, roleName) {
+    try {
+        // 设置角色ID和名称
+        document.getElementById('permissionRoleId').value = roleId;
+        document.getElementById('roleNameTitle').textContent = roleName;
+        
+        // 获取所有权限
+        const response = await fetch('http://localhost:3000/api/permissions');
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const permissions = await response.json();
+        
+        // 获取角色权限
+        const roleResponse = await fetch(`http://localhost:3000/api/roles/${roleId}/permissions`);
+        if (!roleResponse.ok) {
+            throw new Error(`HTTP error! status: ${roleResponse.status}`);
+        }
+        const rolePermissions = await roleResponse.json();
+        
+        // 按模块分组权限
+        const modulePermissions = {};
+        permissions.forEach(permission => {
+            if (!modulePermissions[permission.ModuleName]) {
+                modulePermissions[permission.ModuleName] = [];
+            }
+            modulePermissions[permission.ModuleName].push(permission);
+        });
+        
+        // 生成权限列表HTML
+        let html = '';
+        for (const [moduleName, perms] of Object.entries(modulePermissions)) {
+            html += `
+                <div class="card mb-3">
+                    <div class="card-header bg-light">
+                        <h6 class="mb-0">${moduleName}</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+            `;
+            
+            perms.forEach(permission => {
+                const isChecked = rolePermissions.some(rp => rp.PermissionID === permission.PermissionID);
+                
+                html += `
+                    <div class="col-md-4 mb-2">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="${permission.PermissionID}" 
+                                id="perm_${permission.PermissionID}" name="permissions" ${isChecked ? 'checked' : ''}>
+                            <label class="form-check-label" for="perm_${permission.PermissionID}">
+                                ${permission.PermissionName} (${permission.PermissionCode})
+                            </label>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += `
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        document.getElementById('permissionsList').innerHTML = html;
+        
+        // 显示模态框
+        const modal = new bootstrap.Modal(document.getElementById('rolePermissionsModal'));
+        modal.show();
+    } catch (error) {
+        console.error('获取权限数据失败:', error);
+        alert(`获取权限数据失败: ${error.message}`);
+    }
+}
+
+// 保存角色权限
+async function saveRolePermissions() {
+    try {
+        const roleId = document.getElementById('permissionRoleId').value;
+        
+        // 获取选中的权限
+        const permissionCheckboxes = document.querySelectorAll('input[name="permissions"]:checked');
+        const permissions = Array.from(permissionCheckboxes).map(cb => parseInt(cb.value));
+        
+        // 发送请求
+        const response = await fetch(`http://localhost:3000/api/roles/${roleId}/permissions`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                permissions
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        // 关闭模态框
+        const modal = bootstrap.Modal.getInstance(document.getElementById('rolePermissionsModal'));
+        modal.hide();
+        
+        // 显示成功消息
+        showToast('成功', '权限设置已保存', 'success');
+    } catch (error) {
+        console.error('保存权限设置失败:', error);
+        alert(`保存权限设置失败: ${error.message}`);
+    }
+}
+
+// 格式化日期
+function formatDate(dateString) {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+// 添加通知提示函数
+function showToast(title, message, type = 'info') {
+    // 创建 toast 容器（如果不存在）
+    let toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toast-container';
+        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
+        document.body.appendChild(toastContainer);
+    }
+    
+    // 创建唯一ID
+    const toastId = 'toast-' + Date.now();
+    
+    // 设置 toast 颜色类
+    let bgClass = 'bg-info';
+    if (type === 'success') bgClass = 'bg-success';
+    if (type === 'warning') bgClass = 'bg-warning';
+    if (type === 'danger') bgClass = 'bg-danger';
+    
+    // 创建 toast HTML
+    const toastHtml = `
+        <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header ${bgClass} text-white">
+                <strong class="me-auto">${title}</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="关闭"></button>
+            </div>
+            <div class="toast-body">
+                ${message}
+            </div>
+        </div>
+    `;
+    
+    // 添加 toast 到容器
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    
+    // 初始化并显示 toast
+    const toastElement = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastElement, { delay: 3000 });
+    toast.show();
+    
+    // 自动移除 toast 元素
+    toastElement.addEventListener('hidden.bs.toast', function() {
+        toastElement.remove();
+    });
+}
