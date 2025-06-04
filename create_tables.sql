@@ -7,6 +7,19 @@ CREATE TABLE Supplier (
     Address TEXT
 );
 
+-- 创建操作日志表（OperationLogs）
+CREATE TABLE IF NOT EXISTS OperationLogs (
+    LogID INT PRIMARY KEY AUTO_INCREMENT,
+    UserID INT,
+    Username VARCHAR(50) NOT NULL,
+    Operation VARCHAR(100) NOT NULL,
+    OperationTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+    Module VARCHAR(50) NOT NULL,
+    Details TEXT,
+    IPAddress VARCHAR(50),
+    FOREIGN KEY (UserID) REFERENCES Users(UserID) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 创建商品表（Product）
 CREATE TABLE Product (
     ProductID INT PRIMARY KEY AUTO_INCREMENT,

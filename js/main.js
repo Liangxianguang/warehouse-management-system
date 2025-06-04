@@ -125,7 +125,8 @@ function checkPermission(page) {
             'sales-return': 'sales_return',
             'sales-query': 'sales_query',
             'daily-stats': 'daily_stats',
-            'monthly-stats': 'monthly_stats'
+            'monthly-stats': 'monthly_stats',
+            'operation-logs': 'daily_stats' // 操作日志使用财务统计权限
         };
         
         const requiredPermission = pagePermissionMap[page];
@@ -353,22 +354,19 @@ async function loadDashboardData() {
 
 // 加载内容函数
 function loadContent(page) {
-    console.log('Loading page:', page);  // 添加调试日志
-
-    // 权限检查
+    // 检查用户权限
     if (!checkPermission(page)) {
         alert('您没有权限访问此页面');
         return;
     }
 
-    const mainContent = document.getElementById('main-content');
-    
-    switch(page) {
+    // 清空内容区域
+    document.getElementById('main-content').innerHTML = '';
+
+    // 根据页面名称加载不同内容
+    switch (page) {
         case 'products':
             loadProductsPage();
-            break;
-        case 'sales-entry':
-            loadSalesEntryPage();
             break;
         case 'employees':
             loadEmployeesPage();
@@ -385,20 +383,20 @@ function loadContent(page) {
         case 'purchase-query':
             loadPurchaseQueryPage();
             break;
-        case 'warehouse':
-            loadWarehousePage();
-            break;
         case 'inventory-query':
             loadInventoryQueryPage();
             break;
         case 'stock-check':
             loadStockCheckPage();
             break;
-        case 'sales-return':
-            loadSalesReturnPage();
+        case 'sales-entry':
+            loadSalesEntryPage();
             break;
         case 'sales-query':
             loadSalesQueryPage();
+            break;
+        case 'sales-return':
+            loadSalesReturnPage();
             break;
         case 'daily-stats':
             loadDailyStatsPage();
@@ -407,8 +405,13 @@ function loadContent(page) {
             loadMonthlyStatsPage();
             break;
         case 'users':
+            loadUsersPage();
+            break;
         case 'roles':
-            loadUsersPage();  // 整合的用户权限管理页面
+            loadRolesPage();
+            break;
+        case 'operation-logs':
+            loadOperationLogsPage();
             break;
         default:
             loadDashboardPage();
@@ -4918,12 +4921,12 @@ async function showEditUserModal(userId) {
 // 保存用户
 async function saveUser() {
     try {
-        // 获取表单数据
         const username = document.getElementById('username').value.trim();
         const password = document.getElementById('password').value.trim();
         const fullName = document.getElementById('fullName').value.trim();
         const email = document.getElementById('email').value.trim();
         const phoneNumber = document.getElementById('phoneNumber').value.trim();
+        const status = document.getElementById('status').value;
         
         // 获取选中的角色
         const roleCheckboxes = document.querySelectorAll('input[name="roles"]:checked');
@@ -4952,34 +4955,36 @@ async function saveUser() {
                 fullName,
                 email,
                 phoneNumber,
-                roles
+                status,
+                roles,
+                currentUser: currentUser // 添加当前用户信息
             })
         });
         
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        
+        if (data.success) {
+            // 关闭模态框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addUserModal'));
+            modal.hide();
+            
+            // 重新加载用户列表
+            await loadUsersData();
+            
+            // 显示成功消息
+            showToast('成功', '用户添加成功', 'success');
+        } else {
+            showToast('错误', data.error || '添加用户失败', 'error');
         }
-        
-        // 关闭模态框
-        const modal = bootstrap.Modal.getInstance(document.getElementById('addUserModal'));
-        modal.hide();
-        
-        // 重新加载用户数据
-        loadUsersData();
-        
-        // 显示成功消息
-        showToast('成功', '用户添加成功', 'success');
     } catch (error) {
         console.error('添加用户失败:', error);
-        alert(`添加用户失败: ${error.message}`);
+        showToast('错误', '添加用户失败: ' + error.message, 'error');
     }
 }
 
 // 更新用户
 async function updateUser() {
     try {
-        // 获取表单数据
         const userId = document.getElementById('editUserId').value;
         const username = document.getElementById('editUsername').value.trim();
         const password = document.getElementById('editPassword').value.trim();
@@ -5403,4 +5408,586 @@ function showToast(title, message, type = 'info') {
     toastElement.addEventListener('hidden.bs.toast', function() {
         toastElement.remove();
     });
+}
+
+// 添加操作日志页面相关功能
+function loadOperationLogsPage() {
+    const content = `
+        <div class="container-fluid">
+            ${createPageHeader('操作日志审计')}
+            
+            <!-- 筛选条件 -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <form id="logFilterForm" class="row g-3">
+                        <div class="col-md-3">
+                            <label for="startDate" class="form-label">开始日期</label>
+                            <input type="date" class="form-control" id="startDate">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="endDate" class="form-label">结束日期</label>
+                            <input type="date" class="form-control" id="endDate">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="username" class="form-label">用户名</label>
+                            <input type="text" class="form-control" id="logUsername" placeholder="输入用户名">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="module" class="form-label">操作模块</label>
+                            <select class="form-select" id="logModule">
+                                <option value="">全部</option>
+                                <option value="系统">系统</option>
+                                <option value="基础信息管理">基础信息管理</option>
+                                <option value="进货管理">进货管理</option>
+                                <option value="库房管理">库房管理</option>
+                                <option value="销售管理">销售管理</option>
+                                <option value="财务统计">财务统计</option>
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <button type="button" class="btn btn-primary" onclick="queryOperationLogs()">
+                                        <i class="bi bi-search me-2"></i>查询
+                                    </button>
+                                    <button type="button" class="btn btn-secondary ms-2" onclick="resetLogQueryForm()">
+                                        <i class="bi bi-arrow-repeat me-2"></i>重置
+                                    </button>
+                                </div>
+                                <div>
+                                    <button type="button" class="btn btn-success" onclick="exportOperationLogs('csv')">
+                                        <i class="bi bi-file-earmark-excel me-2"></i>导出CSV
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- 日志列表 -->
+            <div class="card">
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>用户名</th>
+                                    <th>操作</th>
+                                    <th>操作时间</th>
+                                    <th>模块</th>
+                                    <th>IP地址</th>
+                                    <th>详情</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsTableBody">
+                                <!-- 日志数据将在这里动态加载 -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="logsLoadingIndicator" class="text-center my-3 d-none">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">加载中...</span>
+                        </div>
+                    </div>
+                    <div id="noLogsMessage" class="text-center my-3 d-none">
+                        <p class="text-muted">没有找到符合条件的操作日志</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('main-content').innerHTML = content;
+    
+    // 设置默认日期范围（最近7天）
+    const today = new Date();
+    const lastWeek = new Date();
+    lastWeek.setDate(today.getDate() - 7);
+    
+    document.getElementById('startDate').value = formatDateForInput(lastWeek);
+    document.getElementById('endDate').value = formatDateForInput(today);
+    
+    // 加载初始数据
+    queryOperationLogs();
+}
+
+// 查询操作日志
+async function queryOperationLogs() {
+    try {
+        // 显示加载指示器
+        document.getElementById('logsLoadingIndicator').classList.remove('d-none');
+        document.getElementById('noLogsMessage').classList.add('d-none');
+        
+        // 获取筛选条件
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        const username = document.getElementById('logUsername').value;
+        const module = document.getElementById('logModule').value;
+        
+        // 构建查询参数
+        let queryParams = new URLSearchParams();
+        if (startDate) queryParams.append('startDate', startDate);
+        if (endDate) queryParams.append('endDate', endDate);
+        if (username) queryParams.append('username', username);
+        if (module) queryParams.append('module', module);
+        
+        // 发送请求
+        const response = await fetch(`http://localhost:3000/api/operation-logs?${queryParams.toString()}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const logs = await response.json();
+        
+        // 隐藏加载指示器
+        document.getElementById('logsLoadingIndicator').classList.add('d-none');
+        
+        // 更新表格
+        const tableBody = document.getElementById('logsTableBody');
+        tableBody.innerHTML = '';
+        
+        if (logs.length === 0) {
+            document.getElementById('noLogsMessage').classList.remove('d-none');
+        } else {
+            logs.forEach(log => {
+                const row = document.createElement('tr');
+                
+                // 格式化日期时间
+                const operationTime = new Date(log.OperationTime).toLocaleString('zh-CN');
+                
+                // 截断过长的详情
+                const details = log.Details ? (log.Details.length > 50 ? log.Details.substring(0, 50) + '...' : log.Details) : '';
+                
+                row.innerHTML = `
+                    <td>${log.LogID}</td>
+                    <td>${log.Username}</td>
+                    <td>${log.Operation}</td>
+                    <td>${operationTime}</td>
+                    <td>${log.Module}</td>
+                    <td>${log.IPAddress || '-'}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-info" 
+                                onclick="showLogDetails('${log.LogID}', '${log.Operation}', '${operationTime}', '${log.Details ? log.Details.replace(/'/g, "\\'") : ''}')">
+                            查看
+                        </button>
+                    </td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+        }
+    } catch (error) {
+        console.error('获取操作日志失败:', error);
+        showToast('错误', '获取操作日志失败: ' + error.message, 'error');
+        document.getElementById('logsLoadingIndicator').classList.add('d-none');
+    }
+}
+
+// 重置日志查询表单
+function resetLogQueryForm() {
+    // 设置默认日期范围（最近7天）
+    const today = new Date();
+    const lastWeek = new Date();
+    lastWeek.setDate(today.getDate() - 7);
+    
+    document.getElementById('startDate').value = formatDateForInput(lastWeek);
+    document.getElementById('endDate').value = formatDateForInput(today);
+    document.getElementById('logUsername').value = '';
+    document.getElementById('logModule').value = '';
+    
+    // 重新查询
+    queryOperationLogs();
+}
+
+// 导出操作日志
+function exportOperationLogs(format) {
+    // 获取筛选条件
+    const startDate = document.getElementById('startDate').value;
+    const endDate = document.getElementById('endDate').value;
+    const username = document.getElementById('logUsername').value;
+    const module = document.getElementById('logModule').value;
+    
+    // 构建查询参数
+    let queryParams = new URLSearchParams();
+    if (startDate) queryParams.append('startDate', startDate);
+    if (endDate) queryParams.append('endDate', endDate);
+    if (username) queryParams.append('username', username);
+    if (module) queryParams.append('module', module);
+    queryParams.append('format', format);
+    
+    // 创建下载链接
+    const downloadUrl = `http://localhost:3000/api/operation-logs/export?${queryParams.toString()}`;
+    
+    // 创建一个临时链接元素并点击它来触发下载
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// 显示日志详情
+function showLogDetails(id, operation, time, details) {
+    // 创建模态框
+    const modalId = 'logDetailsModal';
+    
+    // 如果已存在，先移除
+    const existingModal = document.getElementById(modalId);
+    if (existingModal) {
+        existingModal.remove();
+    }
+    
+    // 创建新模态框
+    const modal = document.createElement('div');
+    modal.id = modalId;
+    modal.className = 'modal fade';
+    modal.tabIndex = '-1';
+    modal.setAttribute('aria-labelledby', 'logDetailsModalLabel');
+    modal.setAttribute('aria-hidden', 'true');
+    
+    modal.innerHTML = `
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="logDetailsModalLabel">操作详情 #${id}</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <strong>操作：</strong> ${operation}
+                    </div>
+                    <div class="mb-3">
+                        <strong>时间：</strong> ${time}
+                    </div>
+                    <div>
+                        <strong>详情：</strong>
+                        <pre class="mt-2 p-2 bg-light">${details || '无详情'}</pre>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // 显示模态框
+    const modalInstance = new bootstrap.Modal(modal);
+    modalInstance.show();
+}
+
+// 格式化日期为input元素的格式 (YYYY-MM-DD)
+function formatDateForInput(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+// 添加Toast通知功能
+function showToast(title, message, type = 'info') {
+    // 创建Toast容器（如果不存在）
+    let toastContainer = document.getElementById('toast-container');
+    if (!toastContainer) {
+        toastContainer = document.createElement('div');
+        toastContainer.id = 'toast-container';
+        toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        document.body.appendChild(toastContainer);
+    }
+    
+    // 创建唯一ID
+    const toastId = 'toast-' + Date.now();
+    
+    // 设置Toast类型对应的颜色
+    const bgClass = type === 'error' ? 'bg-danger' : 
+                   type === 'success' ? 'bg-success' : 
+                   type === 'warning' ? 'bg-warning' : 'bg-info';
+    
+    // 创建Toast元素
+    const toastHtml = `
+        <div id="${toastId}" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="toast-header ${bgClass} text-white">
+                <strong class="me-auto">${title}</strong>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+            <div class="toast-body">
+                ${message}
+            </div>
+        </div>
+    `;
+    
+    // 添加到容器
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    
+    // 初始化并显示Toast
+    const toastElement = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastElement, { delay: 5000 });
+    toast.show();
+    
+    // 自动移除
+    toastElement.addEventListener('hidden.bs.toast', function () {
+        toastElement.remove();
+    });
+}
+
+// 保存新用户
+async function saveUser() {
+    try {
+        const username = document.getElementById('newUsername').value;
+        const password = document.getElementById('newPassword').value;
+        const fullName = document.getElementById('newFullName').value;
+        const email = document.getElementById('newEmail').value;
+        const phoneNumber = document.getElementById('newPhoneNumber').value;
+        const status = document.getElementById('newStatus').value;
+        
+        // 获取选中的角色
+        const roleCheckboxes = document.querySelectorAll('#newRolesContainer input[type="checkbox"]:checked');
+        const roles = Array.from(roleCheckboxes).map(cb => parseInt(cb.value));
+        
+        const response = await fetch('http://localhost:3000/api/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                username,
+                password,
+                fullName,
+                email,
+                phoneNumber,
+                status,
+                roles,
+                currentUser: currentUser // 添加当前用户信息
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 关闭模态框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addUserModal'));
+            modal.hide();
+            
+            // 重新加载用户列表
+            await loadUsersData();
+            
+            // 显示成功消息
+            showToast('成功', '用户添加成功', 'success');
+        } else {
+            showToast('错误', data.error || '添加用户失败', 'error');
+        }
+    } catch (error) {
+        console.error('添加用户失败:', error);
+        showToast('错误', '添加用户失败: ' + error.message, 'error');
+    }
+}
+
+// 更新用户
+async function updateUser() {
+    try {
+        const userId = document.getElementById('editUserId').value;
+        const username = document.getElementById('editUsername').value;
+        const password = document.getElementById('editPassword').value;
+        const fullName = document.getElementById('editFullName').value;
+        const email = document.getElementById('editEmail').value;
+        const phoneNumber = document.getElementById('editPhoneNumber').value;
+        const status = document.getElementById('editStatus').value;
+        
+        // 获取选中的角色
+        const roleCheckboxes = document.querySelectorAll('#editRolesContainer input[type="checkbox"]:checked');
+        const roles = Array.from(roleCheckboxes).map(cb => parseInt(cb.value));
+        
+        const response = await fetch(`http://localhost:3000/api/users/${userId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                username,
+                password: password ? password : undefined, // 只有在有值时才发送
+                fullName,
+                email,
+                phoneNumber,
+                status,
+                roles,
+                currentUser: currentUser // 添加当前用户信息
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 关闭模态框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editUserModal'));
+            modal.hide();
+            
+            // 重新加载用户列表
+            await loadUsersData();
+            
+            // 显示成功消息
+            showToast('成功', '用户更新成功', 'success');
+        } else {
+            showToast('错误', data.error || '更新用户失败', 'error');
+        }
+    } catch (error) {
+        console.error('更新用户失败:', error);
+        showToast('错误', '更新用户失败: ' + error.message, 'error');
+    }
+}
+
+// 删除用户
+async function deleteUser(userId) {
+    if (!confirm('确定要删除该用户吗？此操作不可恢复。')) {
+        return;
+    }
+    
+    try {
+        // 添加当前用户信息到查询参数
+        const currentUserParam = encodeURIComponent(JSON.stringify({
+            userId: currentUser.userId,
+            username: currentUser.username
+        }));
+        
+        const response = await fetch(`http://localhost:3000/api/users/${userId}?currentUser=${currentUserParam}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 重新加载用户列表
+            await loadUsersData();
+            
+            // 显示成功消息
+            showToast('成功', '用户删除成功', 'success');
+        } else {
+            showToast('错误', data.error || '删除用户失败', 'error');
+        }
+    } catch (error) {
+        console.error('删除用户失败:', error);
+        showToast('错误', '删除用户失败: ' + error.message, 'error');
+    }
+}
+
+// 保存新角色
+async function saveRole() {
+    try {
+        const roleName = document.getElementById('newRoleName').value;
+        const roleDescription = document.getElementById('newRoleDescription').value;
+        const status = document.getElementById('newRoleStatus').value;
+        
+        const response = await fetch('http://localhost:3000/api/roles', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                roleName,
+                roleDescription,
+                status,
+                currentUser: currentUser // 添加当前用户信息
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 关闭模态框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('addRoleModal'));
+            modal.hide();
+            
+            // 重新加载角色列表
+            await loadRolesData();
+            
+            // 显示成功消息
+            showToast('成功', '角色添加成功', 'success');
+        } else {
+            showToast('错误', data.error || '添加角色失败', 'error');
+        }
+    } catch (error) {
+        console.error('添加角色失败:', error);
+        showToast('错误', '添加角色失败: ' + error.message, 'error');
+    }
+}
+
+// 更新角色
+async function updateRole() {
+    try {
+        const roleId = document.getElementById('editRoleId').value;
+        const roleName = document.getElementById('editRoleName').value;
+        const roleDescription = document.getElementById('editRoleDescription').value;
+        const status = document.getElementById('editRoleStatus').value;
+        
+        const response = await fetch(`http://localhost:3000/api/roles/${roleId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                roleName,
+                roleDescription,
+                status,
+                currentUser: currentUser // 添加当前用户信息
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 关闭模态框
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editRoleModal'));
+            modal.hide();
+            
+            // 重新加载角色列表
+            await loadRolesData();
+            
+            // 显示成功消息
+            showToast('成功', '角色更新成功', 'success');
+        } else {
+            showToast('错误', data.error || '更新角色失败', 'error');
+        }
+    } catch (error) {
+        console.error('更新角色失败:', error);
+        showToast('错误', '更新角色失败: ' + error.message, 'error');
+    }
+}
+
+// 删除角色
+async function deleteRole(roleId) {
+    if (!confirm('确定要删除该角色吗？此操作不可恢复。')) {
+        return;
+    }
+    
+    try {
+        // 添加当前用户信息到查询参数
+        const currentUserParam = encodeURIComponent(JSON.stringify({
+            userId: currentUser.userId,
+            username: currentUser.username
+        }));
+        
+        const response = await fetch(`http://localhost:3000/api/roles/${roleId}?currentUser=${currentUserParam}`, {
+            method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            // 重新加载角色列表
+            await loadRolesData();
+            
+            // 显示成功消息
+            showToast('成功', '角色删除成功', 'success');
+        } else {
+            showToast('错误', data.error || '删除角色失败', 'error');
+        }
+    } catch (error) {
+        console.error('删除角色失败:', error);
+        showToast('错误', '删除角色失败: ' + error.message, 'error');
+    }
 }
