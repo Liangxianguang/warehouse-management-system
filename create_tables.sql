@@ -39,6 +39,15 @@ CREATE TABLE Customer (
     IsActive BOOLEAN DEFAULT 1
 );
 
+-- 创建库存表（Inventory）
+CREATE TABLE Inventory (
+    InventoryID INT PRIMARY KEY AUTO_INCREMENT,
+    ProductID INT,
+    StockQuantity INT NOT NULL,
+    Location VARCHAR(50),
+    FOREIGN KEY (ProductID) REFERENCES Product(ProductID)
+);
+
 -- 创建进货表（Purchase）
 CREATE TABLE Purchase (
     PurchaseID INT PRIMARY KEY AUTO_INCREMENT,
@@ -50,15 +59,6 @@ CREATE TABLE Purchase (
     PurchaseDate DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (ProductID) REFERENCES Product(ProductID),
     FOREIGN KEY (SupplierID) REFERENCES Supplier(SupplierID)
-);
-
--- 创建库存表（Inventory）
-CREATE TABLE Inventory (
-    InventoryID INT PRIMARY KEY AUTO_INCREMENT,
-    ProductID INT,
-    StockQuantity INT NOT NULL,
-    Location VARCHAR(50),
-    FOREIGN KEY (ProductID) REFERENCES Product(ProductID)
 );
 
 -- 创建销售表（Sale）
@@ -86,15 +86,27 @@ CREATE TABLE SaleDetail (
     FOREIGN KEY (ProductID) REFERENCES Product(ProductID)
 );
 
--- 创建销售退货表（SaleReturn）
+-- 创建销售退货主表（SaleReturn）
 CREATE TABLE SaleReturn (
     ReturnID INT PRIMARY KEY AUTO_INCREMENT,
-    SaleID INT,
+    SaleID INT NOT NULL,
+    ReturnDate DATETIME NOT NULL,
+    Reason VARCHAR(255) NOT NULL,
     Quantity INT NOT NULL,
-    ReturnDate DATETIME DEFAULT CURRENT_TIMESTAMP,
-    Reason TEXT,
     FOREIGN KEY (SaleID) REFERENCES Sale(SaleID)
-);
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 创建退货明细表（SaleReturnDetail）
+CREATE TABLE SaleReturnDetail (
+    ReturnDetailID INT PRIMARY KEY AUTO_INCREMENT,
+    ReturnID INT NOT NULL,
+    ProductID INT NOT NULL,
+    Quantity INT NOT NULL,
+    Price DECIMAL(10,2) NOT NULL,
+    Subtotal DECIMAL(10,2) GENERATED ALWAYS AS (Price * Quantity) STORED,
+    FOREIGN KEY (ReturnID) REFERENCES SaleReturn(ReturnID),
+    FOREIGN KEY (ProductID) REFERENCES Product(ProductID)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 创建财务报表表（FinancialReport）
 CREATE TABLE FinancialReport (
@@ -106,6 +118,7 @@ CREATE TABLE FinancialReport (
     ReportType ENUM('daily', 'monthly', 'yearly') NOT NULL
 ); 
 
+-- 创建盘点主表（StockCheck）
 CREATE TABLE StockCheck (
     CheckID INT PRIMARY KEY AUTO_INCREMENT,
     CheckNo VARCHAR(20) NOT NULL,
@@ -116,6 +129,7 @@ CREATE TABLE StockCheck (
     FOREIGN KEY (EmployeeID) REFERENCES Employee(EmployeeID)
 );
 
+-- 创建盘点明细表（StockCheckDetail）
 CREATE TABLE StockCheckDetail (
     DetailID INT PRIMARY KEY AUTO_INCREMENT,
     CheckID INT NOT NULL,
@@ -128,63 +142,14 @@ CREATE TABLE StockCheckDetail (
     FOREIGN KEY (ProductID) REFERENCES Product(ProductID)
 );
 
--- 1. 先删除引用了 Sale 表的表
-DROP TABLE IF EXISTS SaleDetail;
-DROP TABLE IF EXISTS SaleReturn;
-
--- 2. 然后删除 Sale 表
-DROP TABLE IF EXISTS Sale;
-
--- 3. 重新创建 Sale 表
-CREATE TABLE Sale (
-    SaleID INT PRIMARY KEY AUTO_INCREMENT,
-    CustomerID INT,
-    EmployeeID INT,
-    SaleDate DATETIME,
-    TotalAmount DECIMAL(10,2),
-    DiscountAmount DECIMAL(10,2) DEFAULT 0,
-    FinalAmount DECIMAL(10,2),
-    FOREIGN KEY (CustomerID) REFERENCES Customer(CustomerID),
-    FOREIGN KEY (EmployeeID) REFERENCES Employee(EmployeeID)
-);
-
--- 4. 重新创建 SaleDetail 表
-CREATE TABLE SaleDetail (
-    DetailID INT PRIMARY KEY AUTO_INCREMENT,
-    SaleID INT,
-    ProductID INT,
-    Quantity INT NOT NULL,
-    Price DECIMAL(10,2) NOT NULL,
-    Subtotal DECIMAL(10,2) NOT NULL,
-    FOREIGN KEY (SaleID) REFERENCES Sale(SaleID),
-    FOREIGN KEY (ProductID) REFERENCES Product(ProductID)
-);
-
--- 创建退货明细表
-CREATE TABLE SaleReturnDetail (
-    ReturnDetailID INT PRIMARY KEY AUTO_INCREMENT,
-    ReturnID INT NOT NULL,
-    ProductID INT NOT NULL,
-    Quantity INT NOT NULL,
-    Price DECIMAL(10,2) NOT NULL,
-    Subtotal DECIMAL(10,2) GENERATED ALWAYS AS (Price * Quantity) STORED,
-    FOREIGN KEY (ReturnID) REFERENCES SaleReturn(ReturnID),
-    FOREIGN KEY (ProductID) REFERENCES Product(ProductID)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
-
--- 创建退货主表
-CREATE TABLE SaleReturn (
-    ReturnID INT PRIMARY KEY AUTO_INCREMENT,
-    SaleID INT NOT NULL,
-    ReturnDate DATETIME NOT NULL,
-    Reason VARCHAR(255) NOT NULL,
-    Quantity INT NOT NULL,
-    FOREIGN KEY (SaleID) REFERENCES Sale(SaleID)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
+-- 创建 Users 表，包含所需的所有字段
 CREATE TABLE Users (
     UserID INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL
-);
+    Username VARCHAR(50) NOT NULL UNIQUE,
+    Password VARCHAR(255) NOT NULL,
+    Role VARCHAR(20) NOT NULL,
+    CreatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    LastLogin DATETIME NULL,
+    Status TINYINT NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- 删除和重建表的部分建议放到脚本最后或单独管理，避免影响主表结构创建顺序。
