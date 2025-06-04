@@ -73,7 +73,7 @@ function loadLoginPage() {
                 <div class="col-md-6">
                     <div class="card shadow">
                         <div class="card-body">
-                            <h3 class="card-title text-center mb-4">超市管理系统登录</h3>
+                            <h3 class="card-title text-center mb-4">仓储物资出入库模拟仿真系统登录</h3>
                             <form id="loginForm" onsubmit="event.preventDefault(); login();">
                                 <div class="mb-3">
                                     <label for="username" class="form-label">用户名</label>
@@ -244,7 +244,7 @@ function loadDashboardPage() {
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h2>
                     <i class="bi bi-speedometer2 me-2"></i>
-                    超市管理系统
+                    仓储物资出入库模拟仿真系统
                 </h2>
                 <div>
                     <span class="me-3">欢迎, ${currentUser.username}</span>
