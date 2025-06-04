@@ -1868,3 +1868,7 @@ app.post('/api/login', (req, res) => {
         });
     });
 });
+
+// 引入并注册质检管理相关API
+const qualityRouter = require('./quality'); // 质检管理API
+app.use('/api/quality', qualityRouter); // 路由前缀为/api/quality

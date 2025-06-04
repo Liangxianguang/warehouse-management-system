@@ -378,6 +378,12 @@ function loadContent(page) {
         case 'monthly-stats':
             loadMonthlyStatsPage();
             break;
+        case 'quality-inspection':
+            loadQualityInspectionPage();
+            break;
+        case 'quality-query':
+            loadQualityQueryPage();
+            break;
         default:
             loadDashboardPage();
     }
