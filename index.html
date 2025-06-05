@@ -3,10 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>仓储物资出入库模拟仿真系统</title>
+    <title>超市销售管理系统</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="css/style.css" rel="stylesheet">
-    
+    <!-- 添加 Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+
     <style>
         /* 主页背景 */
         #main-content {
@@ -25,19 +27,19 @@
         <!-- 侧边栏 -->
         <nav id="sidebar" class="active">
             <div class="sidebar-header">
-                <h3>仓储物资出入库模拟仿真系统</h3>
+                <h3>超市销售管理系统</h3>
             </div>
 
             <ul class="list-unstyled components">
                 <li>
                     <a href="#basicInfoSubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
                         基础信息管理
-                    </a>                    <ul class="collapse list-unstyled" id="basicInfoSubmenu">
+                    </a>
+                    <ul class="collapse list-unstyled" id="basicInfoSubmenu">
                         <li><a href="#" onclick="loadContent('products')">商品信息</a></li>
                         <li><a href="#" onclick="loadContent('employees')">员工信息</a></li>
                         <li><a href="#" onclick="loadContent('customers')">客户信息</a></li>
                         <li><a href="#" onclick="loadContent('suppliers')">供应商信息</a></li>
-                        <li><a href="#" onclick="loadContent('users')">用户管理</a></li>
                     </ul>
                 </li>
                 <li>
@@ -56,6 +58,7 @@
                     <ul class="collapse list-unstyled" id="inventorySubmenu">
                         <li><a href="#" onclick="loadContent('inventory-query')">库存查询</a></li>
                         <li><a href="#" onclick="loadContent('stock-check')">库存盘点</a></li>
+                        <li><a href="#" onclick="loadContent('outbound')">出库管理</a></li>
                     </ul>
                 </li>
                 <li>
@@ -75,16 +78,6 @@
                     <ul class="collapse list-unstyled" id="financeSubmenu">
                         <li><a href="#" onclick="event.preventDefault(); loadContent('daily-stats')">当日统计</a></li>
                         <li><a href="#" onclick="event.preventDefault(); loadContent('monthly-stats')">当月统计</a></li>
-                        <li><a href="#" onclick="event.preventDefault(); loadContent('operation-logs')">操作日志</a></li>
-                    </ul>
-                </li>
-                <li>
-                    <a href="#qualitySubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
-                        质检管理
-                    </a>
-                    <ul class="collapse list-unstyled" id="qualitySubmenu">
-                        <li><a href="#" onclick="loadContent('quality-inspection')">入库质检</a></li>
-                        <li><a href="#" onclick="loadContent('quality-query')">质检查询</a></li>
                     </ul>
                 </li>
             </ul>
@@ -113,6 +106,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/main.js"></script>
-    <script src="js/quality.js"></script>
+    <script src="js/outbound.js"></script>
 </body>
-</html> 
+</html>
