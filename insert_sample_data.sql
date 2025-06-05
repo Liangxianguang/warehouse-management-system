@@ -64,7 +64,7 @@ INSERT INTO SaleReturn (SaleID, ReturnDate, Reason, Quantity) VALUES
 INSERT INTO FinancialReport (ReportDate, TotalRevenue, TotalExpenses, NetProfit, ReportType) VALUES
 ('2024-01-15', 259.20, 180.50, 78.70, 'daily'),
 ('2024-01-01', 15800.00, 12500.00, 3300.00, 'monthly'),
-('2023-12-31', 180000.00, 150000.00, 30000.00, 'yearly');
+('2023-12-31', 180000.00, 150000.00, 30000.00, 'yearly'); 
 
 -- 插入用户数据
 INSERT INTO Users (UserID, Username, Password, Role, CreatedAt, LastLogin, Status) VALUES

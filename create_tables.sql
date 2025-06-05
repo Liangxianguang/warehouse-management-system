@@ -7,6 +7,19 @@ CREATE TABLE Supplier (
     Address TEXT
 );
 
+-- 创建操作日志表（OperationLogs）
+CREATE TABLE IF NOT EXISTS OperationLogs (
+    LogID INT PRIMARY KEY AUTO_INCREMENT,
+    UserID INT,
+    Username VARCHAR(50) NOT NULL,
+    Operation VARCHAR(100) NOT NULL,
+    OperationTime DATETIME DEFAULT CURRENT_TIMESTAMP,
+    Module VARCHAR(50) NOT NULL,
+    Details TEXT,
+    IPAddress VARCHAR(50),
+    FOREIGN KEY (UserID) REFERENCES Users(UserID) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- 创建商品表（Product）
 CREATE TABLE Product (
     ProductID INT PRIMARY KEY AUTO_INCREMENT,
@@ -152,4 +165,3 @@ CREATE TABLE Users (
     LastLogin DATETIME NULL,
     Status TINYINT NOT NULL DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
--- 删除和重建表的部分建议放到脚本最后或单独管理，避免影响主表结构创建顺序。

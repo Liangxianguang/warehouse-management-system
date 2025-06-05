@@ -59,6 +59,32 @@ function handleDisconnect() {
     });
 }
 
+// 记录操作日志的工具函数
+async function logOperation(userId, username, operation, module, details, req) {
+    try {
+        const ipAddress = req.headers['x-forwarded-for'] || req.connection.remoteAddress;
+        
+        const query = `
+            INSERT INTO OperationLogs 
+            (UserID, Username, Operation, Module, Details, IPAddress)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `;
+        
+        await pool.promise().query(query, [
+            userId, 
+            username, 
+            operation, 
+            module, 
+            details, 
+            ipAddress
+        ]);
+        
+        console.log(`操作日志已记录: ${username} - ${operation}`);
+    } catch (error) {
+        console.error('记录操作日志失败:', error);
+    }
+}
+
 // API路由
 // 获取所有商品
 app.get('/api/products', (req, res) => {
@@ -97,24 +123,35 @@ app.get('/api/suppliers', (req, res) => {
 });
 
 // 添加新商品
-app.post('/api/products', (req, res) => {
+app.post('/api/products', async (req, res) => {
     const { ProductName, Category, Price, PurchasePrice, StockQuantity } = req.body;
     
-    const query = `
-        INSERT INTO Product 
-        (ProductName, Category, Price, PurchasePrice, StockQuantity) 
-        VALUES (?, ?, ?, ?, ?)
-    `;
-    
-    pool.query(query, [ProductName, Category, Price, PurchasePrice, StockQuantity], 
-        (error, results) => {
-            if (error) {
-                console.error('Error adding product:', error);
-                res.status(500).json({ error: '添加商品失败' });
-                return;
-            }
-            res.json({ success: true, id: results.insertId });
-        });
+    try {
+        const query = `
+            INSERT INTO Product 
+            (ProductName, Category, Price, PurchasePrice, StockQuantity) 
+            VALUES (?, ?, ?, ?, ?)
+        `;
+        
+        const [result] = await pool.promise().query(query, [ProductName, Category, Price, PurchasePrice, StockQuantity]);
+        
+        // 记录操作日志
+        if (req.body.currentUser) {
+            await logOperation(
+                req.body.currentUser.userId,
+                req.body.currentUser.username,
+                '添加商品',
+                '基础信息管理',
+                `添加商品: ${ProductName}, 类别: ${Category}, 价格: ${Price}`,
+                req
+            );
+        }
+        
+        res.json({ success: true, id: result.insertId });
+    } catch (error) {
+        console.error('Error adding product:', error);
+        res.status(500).json({ error: '添加商品失败' });
+    }
 });
 
 // 添加新销售记录
@@ -178,39 +215,72 @@ app.post('/api/sales', async (req, res) => {
 });
 
 // 删除商品
-app.delete('/api/products/:id', (req, res) => {
+app.delete('/api/products/:id', async (req, res) => {
     const productId = req.params.id;
-    const query = 'DELETE FROM Product WHERE ProductID = ?';
-    pool.query(query, [productId], (error, results) => {
-        if (error) throw error;
+    
+    try {
+        // 获取商品信息用于日志记录
+        const [products] = await pool.promise().query('SELECT * FROM Product WHERE ProductID = ?', [productId]);
+        const product = products[0];
+        
+        const query = 'DELETE FROM Product WHERE ProductID = ?';
+        await pool.promise().query(query, [productId]);
+        
+        // 记录操作日志
+        const currentUser = req.query.currentUser ? JSON.parse(req.query.currentUser) : null;
+        if (currentUser) {
+            await logOperation(
+                currentUser.userId,
+                currentUser.username,
+                '删除商品',
+                '基础信息管理',
+                `删除商品ID: ${productId}, 名称: ${product ? product.ProductName : '未知'}`,
+                req
+            );
+        }
+        
         res.json({ success: true });
-    });
+    } catch (error) {
+        console.error('Error deleting product:', error);
+        res.status(500).json({ error: '删除商品失败' });
+    }
 });
 
 // 更新商品信息
-app.put('/api/products/:id', (req, res) => {
+app.put('/api/products/:id', async (req, res) => {
     const productId = req.params.id;
-    const { ProductName, Category, Price, PurchasePrice, StockQuantity } = req.body;
+    const { ProductName, Category, Price, PurchasePrice, StockQuantity, currentUser } = req.body;
     
-    const query = `
-        UPDATE Product 
-        SET ProductName = ?, 
-            Category = ?, 
-            Price = ?, 
-            PurchasePrice = ?, 
-            StockQuantity = ?
-        WHERE ProductID = ?
-    `;
-    
-    pool.query(query, [ProductName, Category, Price, PurchasePrice, StockQuantity, productId], 
-        (error, results) => {
-            if (error) {
-                console.error('Error updating product:', error);
-                res.status(500).json({ error: '更新商品失败' });
-                return;
-            }
-            res.json({ success: true });
-        });
+    try {
+        const query = `
+            UPDATE Product 
+            SET ProductName = ?, 
+                Category = ?, 
+                Price = ?, 
+                PurchasePrice = ?, 
+                StockQuantity = ? 
+            WHERE ProductID = ?
+        `;
+        
+        await pool.promise().query(query, [ProductName, Category, Price, PurchasePrice, StockQuantity, productId]);
+        
+        // 记录操作日志
+        if (currentUser) {
+            await logOperation(
+                currentUser.userId,
+                currentUser.username,
+                '更新商品',
+                '基础信息管理',
+                `更新商品ID: ${productId}, 名称: ${ProductName}, 价格: ${Price}`,
+                req
+            );
+        }
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error updating product:', error);
+        res.status(500).json({ error: '更新商品失败' });
+    }
 });
 
 // 获取单个商品信息
@@ -1834,39 +1904,698 @@ app.get('/api/products/status', async (req, res) => {
     }
 }); 
 
-// 添加登录路由
-app.post('/api/login', (req, res) => {
+// 权限验证中间件
+function checkPermission(permissionCode) {
+    return async (req, res, next) => {
+        try {
+            const userId = req.headers['x-user-id'];
+            if (!userId) {
+                return res.status(401).json({ error: '未授权访问' });
+            }
+
+            // 查询用户权限
+            const query = `
+                SELECT p.PermissionCode
+                FROM Users u
+                JOIN UserRoles ur ON u.UserID = ur.UserID
+                JOIN RolePermissions rp ON ur.RoleID = rp.RoleID
+                JOIN Permissions p ON rp.PermissionID = p.PermissionID
+                WHERE u.UserID = ? AND u.Status = 1 AND p.PermissionCode = ?
+            `;
+
+            const [results] = await pool.promise().query(query, [userId, permissionCode]);
+            
+            if (results.length === 0) {
+                return res.status(403).json({ error: '权限不足' });
+            }
+
+            next();
+        } catch (error) {
+            console.error('Permission check error:', error);
+            res.status(500).json({ error: '权限验证失败' });
+        }
+    };
+}
+
+// 修改登录路由，支持角色权限
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     
-    // 查询用户信息
-    const query = 'SELECT * FROM users WHERE Username = ? AND Password = ?';
-    pool.query(query, [username, password], (error, results) => {
-        if (error) {
-            console.error('Login error:', error);
-            res.status(500).json({ success: false, message: '服务器错误' });
-            return;
-        }
+    try {
+        const [users] = await pool.promise().query(
+            'SELECT * FROM Users WHERE Username = ? AND Password = ?',
+            [username, password]
+        );
         
-        if (results.length === 0) {
+        if (users.length > 0) {
+            const user = users[0];
+            
+            // 更新最后登录时间
+            await pool.promise().query(
+                'UPDATE Users SET LastLogin = NOW() WHERE UserID = ?',
+                [user.UserID]
+            );
+            
+            // 获取用户权限
+            let permissions = [];
+            if (user.Role === 'admin') {
+                // 管理员拥有所有权限
+                const [allPermissions] = await pool.promise().query('SELECT PermissionCode FROM Permissions');
+                permissions = allPermissions.map(p => p.PermissionCode);
+            } else {
+                // 获取用户角色对应的权限
+                const [userPermissions] = await pool.promise().query(`
+                    SELECT p.PermissionCode
+                    FROM UserRoles ur
+                    JOIN RolePermissions rp ON ur.RoleID = rp.RoleID
+                    JOIN Permissions p ON rp.PermissionID = p.PermissionID
+                    WHERE ur.UserID = ?
+                `, [user.UserID]);
+                
+                permissions = userPermissions.map(p => p.PermissionCode);
+            }
+            
+            // 记录登录操作日志
+            await logOperation(
+                user.UserID, 
+                user.Username, 
+                '用户登录', 
+                '系统', 
+                `用户 ${user.Username} 登录系统`, 
+                req
+            );
+            
+            res.json({
+                success: true,
+                user: {
+                    userId: user.UserID,
+                    username: user.Username,
+                    fullName: user.FullName || user.Username,
+                    role: user.Role,
+                    permissions: permissions
+                }
+            });
+        } else {
             res.json({ success: false, message: '用户名或密码错误' });
-            return;
+        }
+    } catch (error) {
+        console.error('登录失败:', error);
+        res.status(500).json({ success: false, message: '登录失败' });
+    }
+});
+
+// 用户管理API
+
+// 获取所有用户
+app.get('/api/users', async (req, res) => {
+    try {
+        const [users] = await pool.promise().query(`
+            SELECT u.*, GROUP_CONCAT(r.RoleName SEPARATOR ', ') AS Role
+            FROM users u
+            LEFT JOIN userroles ur ON u.UserID = ur.UserID
+            LEFT JOIN roles r ON ur.RoleID = r.RoleID
+            GROUP BY u.UserID
+        `);
+        res.json(users);
+    } catch (err) {
+        console.error('获取用户列表失败:', err);
+        res.status(500).json({ message: '获取用户列表失败', error: err.message });
+    }
+});
+
+// 获取单个用户
+app.get('/api/users/:id', async (req, res) => {
+    try {
+        const userId = req.params.id;
+        
+        // 获取用户基本信息
+        const [users] = await pool.promise().query('SELECT * FROM users WHERE UserID = ?', [userId]);
+        
+        if (users.length === 0) {
+            return res.status(404).json({ message: '用户不存在' });
         }
         
-        const user = results[0];
-        if (user.Status !== 1) {
-            res.json({ success: false, message: '账户已禁用' });
-            return;
+        const user = users[0];
+        
+        // 获取用户角色
+        const [roles] = await pool.promise().query(`
+            SELECT r.* 
+            FROM roles r
+            JOIN userroles ur ON r.RoleID = ur.RoleID
+            WHERE ur.UserID = ?
+        `, [userId]);
+        
+        user.Roles = roles;
+        
+        res.json(user);
+    } catch (err) {
+        console.error('获取用户信息失败:', err);
+        res.status(500).json({ message: '获取用户信息失败', error: err.message });
+    }
+});
+
+// 添加用户
+app.post('/api/users', async (req, res) => {
+    const { username, password, fullName, email, phoneNumber, status, roles, currentUser } = req.body;
+    
+    try {
+        // 开始事务
+        const connection = await pool.promise().getConnection();
+        await connection.beginTransaction();
+        
+        try {
+            // 1. 插入用户基本信息
+            const [userResult] = await connection.query(
+                'INSERT INTO Users (Username, Password, FullName, Email, PhoneNumber, Status, CreatedAt) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+                [username, password, fullName, email, phoneNumber, status]
+            );
+            
+            const userId = userResult.insertId;
+            
+            // 2. 分配角色
+            if (roles && roles.length > 0) {
+                for (const roleId of roles) {
+                    await connection.query(
+                        'INSERT INTO UserRoles (UserID, RoleID, AssignedAt, AssignedBy) VALUES (?, ?, NOW(), ?)',
+                        [userId, roleId, currentUser ? currentUser.userId : null]
+                    );
+                }
+            }
+            
+            // 提交事务
+            await connection.commit();
+            
+            // 记录操作日志
+            if (currentUser) {
+                await logOperation(
+                    currentUser.userId,
+                    currentUser.username,
+                    '添加用户',
+                    '基础信息管理',
+                    `添加用户: ${username}, 姓名: ${fullName}`,
+                    req
+                );
+            }
+            
+            res.json({ success: true, userId });
+        } catch (error) {
+            // 回滚事务
+            await connection.rollback();
+            throw error;
+        } finally {
+            // 释放连接
+            connection.release();
+        }
+    } catch (error) {
+        console.error('添加用户失败:', error);
+        res.status(500).json({ error: '添加用户失败: ' + error.message });
+    }
+});
+
+// 更新用户
+app.put('/api/users/:id', async (req, res) => {
+    const userId = req.params.id;
+    const { username, password, fullName, email, phoneNumber, status, roles, currentUser } = req.body;
+    
+    try {
+        // 开始事务
+        const connection = await pool.promise().getConnection();
+        await connection.beginTransaction();
+        
+        try {
+            // 1. 更新用户基本信息
+            const updateFields = [];
+            const updateParams = [];
+            
+            if (username) {
+                updateFields.push('Username = ?');
+                updateParams.push(username);
+            }
+            
+            if (password) {
+                updateFields.push('Password = ?');
+                updateParams.push(password);
+            }
+            
+            if (fullName !== undefined) {
+                updateFields.push('FullName = ?');
+                updateParams.push(fullName);
+            }
+            
+            if (email !== undefined) {
+                updateFields.push('Email = ?');
+                updateParams.push(email);
+            }
+            
+            if (phoneNumber !== undefined) {
+                updateFields.push('PhoneNumber = ?');
+                updateParams.push(phoneNumber);
+            }
+            
+            if (status !== undefined) {
+                updateFields.push('Status = ?');
+                updateParams.push(status);
+            }
+            
+            if (updateFields.length > 0) {
+                updateParams.push(userId);
+                await connection.query(
+                    `UPDATE Users SET ${updateFields.join(', ')} WHERE UserID = ?`,
+                    updateParams
+                );
+            }
+            
+            // 2. 更新角色分配
+            if (roles) {
+                // 删除现有角色
+                await connection.query('DELETE FROM UserRoles WHERE UserID = ?', [userId]);
+                
+                // 分配新角色
+                for (const roleId of roles) {
+                    await connection.query(
+                        'INSERT INTO UserRoles (UserID, RoleID, AssignedAt, AssignedBy) VALUES (?, ?, NOW(), ?)',
+                        [userId, roleId, currentUser ? currentUser.userId : null]
+                    );
+                }
+            }
+            
+            // 提交事务
+            await connection.commit();
+            
+            // 记录操作日志
+            if (currentUser) {
+                await logOperation(
+                    currentUser.userId,
+                    currentUser.username,
+                    '更新用户',
+                    '基础信息管理',
+                    `更新用户ID: ${userId}, 用户名: ${username || '未修改'}`,
+                    req
+                );
+            }
+            
+            res.json({ success: true });
+        } catch (error) {
+            // 回滚事务
+            await connection.rollback();
+            throw error;
+        } finally {
+            // 释放连接
+            connection.release();
+        }
+    } catch (error) {
+        console.error('更新用户失败:', error);
+        res.status(500).json({ error: '更新用户失败: ' + error.message });
+    }
+});
+
+// 删除用户
+app.delete('/api/users/:id', async (req, res) => {
+    const userId = req.params.id;
+    
+    try {
+        // 获取用户信息用于日志记录
+        const [users] = await pool.promise().query('SELECT * FROM Users WHERE UserID = ?', [userId]);
+        const user = users[0];
+        
+        // 删除用户
+        await pool.promise().query('DELETE FROM Users WHERE UserID = ?', [userId]);
+        
+        // 记录操作日志
+        const currentUser = req.query.currentUser ? JSON.parse(req.query.currentUser) : null;
+        if (currentUser) {
+            await logOperation(
+                currentUser.userId,
+                currentUser.username,
+                '删除用户',
+                '基础信息管理',
+                `删除用户ID: ${userId}, 用户名: ${user ? user.Username : '未知'}`,
+                req
+            );
         }
         
-        // 返回用户信息
+        res.json({ success: true });
+    } catch (error) {
+        console.error('删除用户失败:', error);
+        res.status(500).json({ error: '删除用户失败: ' + error.message });
+    }
+});
+
+// 角色管理API
+
+// 获取所有角色
+app.get('/api/roles', async (req, res) => {
+    try {
+        const [roles] = await pool.promise().query(`
+            SELECT r.*, COUNT(ur.UserID) AS UserCount
+            FROM roles r
+            LEFT JOIN userroles ur ON r.RoleID = ur.RoleID
+            GROUP BY r.RoleID
+        `);
+        res.json(roles);
+    } catch (err) {
+        console.error('获取角色列表失败:', err);
+        res.status(500).json({ message: '获取角色列表失败', error: err.message });
+    }
+});
+
+// 获取单个角色
+app.get('/api/roles/:id', async (req, res) => {
+    try {
+        const roleId = req.params.id;
+        
+        const [roles] = await pool.promise().query('SELECT * FROM roles WHERE RoleID = ?', [roleId]);
+        
+        if (roles.length === 0) {
+            return res.status(404).json({ message: '角色不存在' });
+        }
+        
+        res.json(roles[0]);
+    } catch (err) {
+        console.error('获取角色信息失败:', err);
+        res.status(500).json({ message: '获取角色信息失败', error: err.message });
+    }
+});
+
+// 添加角色
+app.post('/api/roles', async (req, res) => {
+    const { roleName, roleDescription, status, currentUser } = req.body;
+    
+    try {
+        const [result] = await pool.promise().query(
+            'INSERT INTO Roles (RoleName, RoleDescription, Status, CreatedAt) VALUES (?, ?, ?, NOW())',
+            [roleName, roleDescription, status]
+        );
+        
+        // 记录操作日志
+        if (currentUser) {
+            await logOperation(
+                currentUser.userId,
+                currentUser.username,
+                '添加角色',
+                '基础信息管理',
+                `添加角色: ${roleName}`,
+                req
+            );
+        }
+        
+        res.json({ success: true, roleId: result.insertId });
+    } catch (error) {
+        console.error('创建角色失败:', error);
+        res.status(500).json({ error: '创建角色失败: ' + error.message });
+    }
+});
+
+// 更新角色
+app.put('/api/roles/:id', async (req, res) => {
+    const roleId = req.params.id;
+    const { roleName, roleDescription, status, currentUser } = req.body;
+    
+    try {
+        await pool.promise().query(
+            'UPDATE Roles SET RoleName = ?, RoleDescription = ?, Status = ? WHERE RoleID = ?',
+            [roleName, roleDescription, status, roleId]
+        );
+        
+        // 记录操作日志
+        if (currentUser) {
+            await logOperation(
+                currentUser.userId,
+                currentUser.username,
+                '更新角色',
+                '基础信息管理',
+                `更新角色ID: ${roleId}, 角色名: ${roleName}`,
+                req
+            );
+        }
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('更新角色失败:', error);
+        res.status(500).json({ error: '更新角色失败: ' + error.message });
+    }
+});
+
+// 删除角色
+app.delete('/api/roles/:id', async (req, res) => {
+    const roleId = req.params.id;
+    
+    try {
+        // 获取角色信息用于日志记录
+        const [roles] = await pool.promise().query('SELECT * FROM Roles WHERE RoleID = ?', [roleId]);
+        const role = roles[0];
+        
+        // 删除角色
+        await pool.promise().query('DELETE FROM Roles WHERE RoleID = ?', [roleId]);
+        
+        // 记录操作日志
+        const currentUser = req.query.currentUser ? JSON.parse(req.query.currentUser) : null;
+        if (currentUser) {
+            await logOperation(
+                currentUser.userId,
+                currentUser.username,
+                '删除角色',
+                '基础信息管理',
+                `删除角色ID: ${roleId}, 角色名: ${role ? role.RoleName : '未知'}`,
+                req
+            );
+        }
+        
+        res.json({ success: true });
+    } catch (error) {
+        console.error('删除角色失败:', error);
+        res.status(500).json({ error: '删除角色失败: ' + error.message });
+    }
+});
+
+// 获取所有权限
+app.get('/api/permissions', async (req, res) => {
+    try {
+        // 修改查询，直接从permissions表获取数据，使用ModuleName字段
+        const [permissions] = await pool.promise().query(`
+            SELECT p.*, p.ModuleName
+            FROM permissions p
+            ORDER BY p.ModuleName, p.PermissionID
+        `);
+        res.json(permissions);
+    } catch (err) {
+        console.error('获取权限列表失败:', err);
+        res.status(500).json({ message: '获取权限列表失败', error: err.message });
+    }
+});
+
+// 获取角色权限
+app.get('/api/roles/:id/permissions', async (req, res) => {
+    try {
+        const roleId = req.params.id;
+        
+        // 修改查询，直接从permissions表获取数据，使用ModuleName字段
+        const [permissions] = await pool.promise().query(`
+            SELECT p.*, p.ModuleName
+            FROM permissions p
+            JOIN rolepermissions rp ON p.PermissionID = rp.PermissionID
+            WHERE rp.RoleID = ?
+            ORDER BY p.ModuleName, p.PermissionID
+        `, [roleId]);
+        
+        res.json(permissions);
+    } catch (err) {
+        console.error('获取角色权限失败:', err);
+        res.status(500).json({ message: '获取角色权限失败', error: err.message });
+    }
+});
+
+// 更新角色权限
+app.put('/api/roles/:id/permissions', async (req, res) => {
+    try {
+        const roleId = req.params.id;
+        const { permissions } = req.body;
+        
+        // 开始事务
+        await pool.promise().query('START TRANSACTION');
+        
+        // 删除旧权限
+        await pool.promise().query('DELETE FROM rolepermissions WHERE RoleID = ?', [roleId]);
+        
+        // 添加新权限
+        if (permissions && permissions.length > 0) {
+            const permissionValues = permissions.map(permissionId => [roleId, permissionId]);
+            await pool.promise().query('INSERT INTO rolepermissions (RoleID, PermissionID) VALUES ?', [permissionValues]);
+        }
+        
+        // 提交事务
+        await pool.promise().query('COMMIT');
+        
+        res.json({ message: '角色权限更新成功' });
+    } catch (err) {
+        // 回滚事务
+        await pool.promise().query('ROLLBACK');
+        console.error('更新角色权限失败:', err);
+        res.status(500).json({ message: '更新角色权限失败', error: err.message });
+    }
+});
+
+// 修改登录API，返回用户权限信息
+app.post('/api/login', async (req, res) => {
+    const { username, password } = req.body;
+    
+    try {
+        // 查询用户
+        const [users] = await pool.promise().query('SELECT * FROM users WHERE Username = ? AND Password = ?', [username, password]);
+        
+        if (users.length === 0) {
+            return res.status(401).json({ success: false, message: '用户名或密码错误' });
+        }
+        
+        const user = users[0];
+        
+        // 查询用户角色
+        const [roles] = await pool.promise().query(`
+            SELECT r.* 
+            FROM roles r
+            JOIN userroles ur ON r.RoleID = ur.RoleID
+            WHERE ur.UserID = ?
+        `, [user.UserID]);
+        
+        // 查询用户权限
+        const [permissions] = await pool.promise().query(`
+            SELECT DISTINCT p.PermissionCode
+            FROM permissions p
+            JOIN rolepermissions rp ON p.PermissionID = rp.PermissionID
+            JOIN userroles ur ON rp.RoleID = ur.RoleID
+            WHERE ur.UserID = ?
+        `, [user.UserID]);
+        
+        // 提取权限代码
+        const permissionCodes = permissions.map(p => p.PermissionCode);
+        
+        // 更新最后登录时间
+        await pool.promise().query('UPDATE users SET LastLogin = NOW() WHERE UserID = ?', [user.UserID]);
+        
+        // 返回用户信息和权限
         res.json({
             success: true,
-            userId: user.UserID,
-            username: user.Username,
-            role: user.Role,
-            status: user.Status
+            user: {
+                userId: user.UserID,
+                username: user.Username,
+                fullName: user.FullName,
+                email: user.Email,
+                phoneNumber: user.PhoneNumber,
+                status: user.Status,
+                roles: roles,
+                permissions: permissionCodes
+            }
         });
-    });
+    } catch (err) {
+        console.error('登录失败:', err);
+        res.status(500).json({ success: false, message: '登录失败', error: err.message });
+    }
+});
+
+// 获取操作日志列表
+app.get('/api/operation-logs', async (req, res) => {
+    try {
+        const { startDate, endDate, username, module } = req.query;
+        
+        let query = `
+            SELECT * FROM OperationLogs 
+            WHERE 1=1
+        `;
+        
+        const params = [];
+        
+        // 添加筛选条件
+        if (startDate && endDate) {
+            query += ` AND OperationTime BETWEEN ? AND ?`;
+            params.push(`${startDate} 00:00:00`, `${endDate} 23:59:59`);
+        }
+        
+        if (username) {
+            query += ` AND Username LIKE ?`;
+            params.push(`%${username}%`);
+        }
+        
+        if (module) {
+            query += ` AND Module = ?`;
+            params.push(module);
+        }
+        
+        // 添加排序
+        query += ` ORDER BY OperationTime DESC`;
+        
+        const [results] = await pool.promise().query(query, params);
+        res.json(results);
+    } catch (error) {
+        console.error('获取操作日志失败:', error);
+        res.status(500).json({ error: '获取操作日志失败' });
+    }
+});
+
+// 导出操作日志（CSV格式）
+app.get('/api/operation-logs/export', async (req, res) => {
+    try {
+        const { startDate, endDate, username, module, format } = req.query;
+        
+        let query = `
+            SELECT 
+                LogID, 
+                Username, 
+                Operation, 
+                DATE_FORMAT(OperationTime, '%Y-%m-%d %H:%i:%s') as OperationTime, 
+                Module, 
+                Details, 
+                IPAddress 
+            FROM OperationLogs 
+            WHERE 1=1
+        `;
+        
+        const params = [];
+        
+        // 添加筛选条件
+        if (startDate && endDate) {
+            query += ` AND OperationTime BETWEEN ? AND ?`;
+            params.push(`${startDate} 00:00:00`, `${endDate} 23:59:59`);
+        }
+        
+        if (username) {
+            query += ` AND Username LIKE ?`;
+            params.push(`%${username}%`);
+        }
+        
+        if (module) {
+            query += ` AND Module = ?`;
+            params.push(module);
+        }
+        
+        // 添加排序
+        query += ` ORDER BY OperationTime DESC`;
+        
+        const [logs] = await pool.promise().query(query, params);
+        
+        if (format === 'csv') {
+            // 设置CSV响应头
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename=operation_logs_${new Date().toISOString().slice(0,10)}.csv`);
+            
+            // CSV表头
+            let csv = 'ID,用户名,操作,操作时间,模块,详情,IP地址\n';
+            
+            // 添加数据行
+            logs.forEach(log => {
+                // 处理CSV中的特殊字符
+                const details = log.Details ? log.Details.replace(/"/g, '""').replace(/\n/g, ' ') : '';
+                csv += `${log.LogID},"${log.Username}","${log.Operation}","${log.OperationTime}","${log.Module}","${details}","${log.IPAddress}"\n`;
+            });
+            
+            res.send(csv);
+        } else {
+            // 默认返回JSON
+            res.json(logs);
+        }
+    } catch (error) {
+        console.error('导出操作日志失败:', error);
+        res.status(500).json({ error: '导出操作日志失败' });
+    }
 });
 
 // 引入并注册质检管理相关API
