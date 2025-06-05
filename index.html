@@ -78,6 +78,15 @@
                         <li><a href="#" onclick="event.preventDefault(); loadContent('operation-logs')">操作日志</a></li>
                     </ul>
                 </li>
+                <li>
+                    <a href="#qualitySubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
+                        质检管理
+                    </a>
+                    <ul class="collapse list-unstyled" id="qualitySubmenu">
+                        <li><a href="#" onclick="loadContent('quality-inspection')">入库质检</a></li>
+                        <li><a href="#" onclick="loadContent('quality-query')">质检查询</a></li>
+                    </ul>
+                </li>
             </ul>
         </nav>
 
@@ -104,5 +113,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script src="js/main.js"></script>
+    <script src="js/quality.js"></script>
 </body>
 </html> 

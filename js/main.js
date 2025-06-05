@@ -404,6 +404,11 @@ function loadContent(page) {
         case 'monthly-stats':
             loadMonthlyStatsPage();
             break;
+        case 'quality-inspection':
+            loadQualityInspectionPage();
+            break;
+        case 'quality-query':
+            loadQualityQueryPage();
         case 'users':
             loadUsersPage();
             break;

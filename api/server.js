@@ -14,8 +14,8 @@ app.use(express.json());
 const dbConfig = {
     host: 'localhost',
     user: 'root',
-    password: '123456',
-    database: 'supermarket_db',
+    password: '123123',
+    database: 'warehouse_db',
     port: 3306
 };
 
@@ -2597,3 +2597,7 @@ app.get('/api/operation-logs/export', async (req, res) => {
         res.status(500).json({ error: '导出操作日志失败' });
     }
 });
+
+// 引入并注册质检管理相关API
+const qualityRouter = require('./quality'); // 质检管理API
+app.use('/api/quality', qualityRouter); // 路由前缀为/api/quality
