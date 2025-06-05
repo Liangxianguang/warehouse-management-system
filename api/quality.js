@@ -6,8 +6,8 @@ const mysql = require('mysql2');
 const dbConfig = {
     host: 'localhost',
     user: 'root',
-    password: '123123',
-    database: 'warehouse_db',
+    password: '123456',
+    database: 'supermarket_db',
     port: 3306
 };
 const pool = mysql.createPool(dbConfig);

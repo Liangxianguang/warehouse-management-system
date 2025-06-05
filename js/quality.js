@@ -36,7 +36,7 @@ function loadQualityInspectionPage() {
  */
 async function loadPurchaseOptions() {
     // 获取所有入库单
-    const res = await fetch('/api/quality/purchases');
+    const res = await fetch('http://localhost:3000/api/quality/purchases');
     const purchases = await res.json();
     const select = document.getElementById('purchaseSelect');
     select.innerHTML = '<option value="">请选择入库单</option>' +
@@ -104,7 +104,7 @@ async function submitQualityInspection() {
     }
     const details = [{ productId, quantity, result, remark }];
     const body = { purchaseId, inspector, supplierId, note, details };
-    const res = await fetch('/api/quality/inspection', {
+    const res = await fetch('http://localhost:3000/api/quality/inspection', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -169,7 +169,7 @@ async function queryQualityResults() {
     if (endDate) params.append('endDate', endDate);
     if (productName) params.append('productName', productName);
     if (result) params.append('result', result);
-    const res = await fetch('/api/quality/query?' + params.toString());
+    const res = await fetch('http://localhost:3000/api/quality/query?' + params.toString());
     const data = await res.json();
     let html = `<table class="table table-bordered"><thead>
         <tr>

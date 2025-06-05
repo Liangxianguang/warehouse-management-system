@@ -409,6 +409,7 @@ function loadContent(page) {
             break;
         case 'quality-query':
             loadQualityQueryPage();
+            break;
         case 'users':
             loadUsersPage();
             break;
