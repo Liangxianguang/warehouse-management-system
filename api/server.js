@@ -14,7 +14,7 @@ app.use(express.json());
 const dbConfig = {
     host: 'localhost',
     user: 'root',
-    password: '123456',
+    password: '123123',
     database: 'supermarket_db',
     port: 3306
 };
