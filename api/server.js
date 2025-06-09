@@ -10,6 +10,8 @@ app.use(express.static(path.join(__dirname, '..'))); // 使用项目根目录作
 app.use(cors());
 app.use(express.json());
 
+app.use('/api/statistics', require('./statistics'));
+
 // 数据库连接配置
 const dbConfig = {
     host: 'localhost',
