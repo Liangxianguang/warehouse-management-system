@@ -3778,18 +3778,18 @@ async function loadDailyStats() {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center">今日暂无销售记录</td></tr>';
         }
 
-        // 新增：加载库存变化趋势数据并渲染图表
+        // 加载库存变化趋势数据并渲染图表
         try {
             const trendResp = await fetch('http://localhost:3000/api/statistics/stocktrend?date=' + new Date().toISOString().slice(0, 10));
             if (trendResp.ok) {
                 const trendData = await trendResp.json();
-                // trendData 应包含 { dates: [...], stock: [...] }
-                if (window.renderAdvancedStatsChart) {
-                    renderAdvancedStatsChart('dailyStockTrendChart', 'inout', {
+                // trendData 应包含 { dates: [...], in: [...], out: [...] }
+                if (window.renderInOutTrendChart) {
+                    renderInOutTrendChart('dailyStockTrendChart', {
                         dates: trendData.dates,
                         in: trendData.in,   // 入库量
                         out: trendData.out  // 出库量
-                    });
+                    }, '');
                 }
             } else {
                 document.getElementById('dailyStockTrendChart').innerHTML = '<div class="text-danger">库存趋势数据加载失败</div>';
@@ -3797,7 +3797,7 @@ async function loadDailyStats() {
         } catch (e) {
             document.getElementById('dailyStockTrendChart').innerHTML = '<div class="text-danger">库存趋势数据加载异常</div>';
         }
-        
+
         // 更新表格底部合计
         document.getElementById('totalSales').textContent = 
             `￥${(data.summary.totalSales || 0).toFixed(2)}`;
@@ -3807,7 +3807,7 @@ async function loadDailyStats() {
             `￥${(data.summary.totalFinal || 0).toFixed(2)}`;
         document.getElementById('totalProfit').textContent = 
             `￥${(data.summary.totalProfit || 0).toFixed(2)}`;
-        
+
     } catch (error) {
         console.error('Error loading daily stats:', error);
         alert('加载当日统计数据失败: ' + error.message);
@@ -3962,18 +3962,18 @@ async function loadMonthlyStats() {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center">本月暂无销售记录</td></tr>';
         }
 
-        // 新增：加载出入库趋势数据并渲染图表
+        // 加载出入库趋势数据并渲染图表
         try {
             const trendResp = await fetch(`http://localhost:3000/api/statistics/inouttrend?month=${month}`);
             if (trendResp.ok) {
                 const trendData = await trendResp.json();
                 // trendData 应包含 { dates: [...], in: [...], out: [...] }
-                if (window.renderAdvancedStatsChart) {
-                    renderAdvancedStatsChart('monthlyInOutTrendChart', 'inout', {
+                if (window.renderInOutTrendChart) {
+                    renderInOutTrendChart('monthlyInOutTrendChart', {
                         dates: trendData.dates,
                         in: trendData.in,
                         out: trendData.out
-                    });
+                    }, '');
                 }
             } else {
                 document.getElementById('monthlyInOutTrendChart').innerHTML = '<div class="text-danger">出入库趋势数据加载失败</div>';
