@@ -41,14 +41,22 @@
                         <li><a href="#" onclick="loadContent('suppliers')">供应商信息</a></li>
                         <li><a href="#" onclick="loadContent('users')">用户管理</a></li>
                     </ul>
-                </li>
-                <li>
+                </li>                <li>
                     <a href="#purchaseSubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
                         进货管理
                     </a>
                     <ul class="collapse list-unstyled" id="purchaseSubmenu">
                         <li><a href="#" onclick="loadContent('purchase-entry')">入库登记</a></li>
                         <li><a href="#" onclick="loadContent('purchase-query')">入库查询</a></li>
+                    </ul>
+                </li>
+                <li>
+                    <a href="#qualitySubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
+                        质检管理
+                    </a>
+                    <ul class="collapse list-unstyled" id="qualitySubmenu">
+                        <li><a href="#" onclick="loadContent('quality-inspection')">入库质检</a></li>
+                        <li><a href="#" onclick="loadContent('quality-query')">质检查询</a></li>
                     </ul>
                 </li>
                 <li>
@@ -79,15 +87,6 @@
                         <li><a href="#" onclick="event.preventDefault(); loadContent('daily-stats')">当日统计</a></li>
                         <li><a href="#" onclick="event.preventDefault(); loadContent('monthly-stats')">当月统计</a></li>
                         <li><a href="#" onclick="event.preventDefault(); loadContent('operation-logs')">操作日志</a></li>
-                    </ul>
-                </li>
-                <li>
-                    <a href="#qualitySubmenu" data-bs-toggle="collapse" class="dropdown-toggle">
-                        质检管理
-                    </a>
-                    <ul class="collapse list-unstyled" id="qualitySubmenu">
-                        <li><a href="#" onclick="loadContent('quality-inspection')">入库质检</a></li>
-                        <li><a href="#" onclick="loadContent('quality-query')">质检查询</a></li>
                     </ul>
                 </li>
             </ul>
