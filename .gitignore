@@ -1,3 +1,4 @@
 *.sql
 !database_backup.sql
+!database_init.sql
 .vscode/

@@ -159,8 +159,17 @@
    CREATE DATABASE supermarket_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
    
    # 导入完整数据库（包含表结构和示例数据）
-   mysql -u root -p supermarket_db < database_backup.sql
+   mysql -u root -p supermarket_db < database_init.sql
    ```
+   运行以上脚本如果出现编码格式报错，请使用如下指令：
+   ```bash
+   # 将命令行窗口字符集切换为UTF-8，防止中文乱码
+   chcp 65001
+
+   # 执行数据库初始化脚本
+   mysql -u root -p --default-character-set=utf8mb4 supermarket_db < database_init.sql
+   ```
+
 
 4. **系统配置**
    修改 `api/server.js` 中的数据库连接配置：
