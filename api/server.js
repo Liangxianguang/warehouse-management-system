@@ -10,11 +10,13 @@ app.use(express.static(path.join(__dirname, '..'))); // 使用项目根目录作
 app.use(cors());
 app.use(express.json());
 
+app.use('/api/statistics', require('./statistics'));
+
 // 数据库连接配置
 const dbConfig = {
     host: 'localhost',
     user: 'root',
-    password: '123456',
+    password: '123123',
     database: 'supermarket_db',
     port: 3306
 };

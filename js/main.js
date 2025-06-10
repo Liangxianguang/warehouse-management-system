@@ -425,6 +425,9 @@ function loadContent(page) {
         case 'outbound':
             window.loadOutboundPage();  // 调用outbound.js中的加载函数
             break;
+        case 'advanced-stats':
+            loadAdvancedStatsPage();
+            break;
         default:
             loadDashboardPage();
     }
@@ -3728,6 +3731,16 @@ function loadDailyStatsPage() {
                 </div>
             </div>
 
+            <!-- 库存变化趋势图表 -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">今日库存变化趋势</h5>
+                </div>
+                <div class="card-body">
+                    <div id="dailyStockTrendChart" style="height:350px;"></div>
+                </div>
+            </div>
+
             <!-- 修改销售明细表格 - 移除操作列 -->
             <div class="card">
                 <div class="card-header">
@@ -3770,6 +3783,84 @@ function loadDailyStatsPage() {
     document.getElementById('main-content').innerHTML = content;
     loadDailyStats();
 }
+
+// 修改加载当日统计数据函数
+async function loadDailyStats() {
+    try {
+        const response = await fetch('http://localhost:3000/api/stats/daily');
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || '服务器响应错误');
+        }
+        
+        const data = await response.json();
+        console.log('Daily stats data:', data);
+        
+        // 更新统计卡片
+        document.getElementById('dailySales').textContent = 
+            `￥${(data.summary.totalSales || 0).toFixed(2)}`;
+        document.getElementById('dailyProfit').textContent = 
+            `￥${(data.summary.totalProfit || 0).toFixed(2)}`;
+        document.getElementById('dailyOrders').textContent = 
+            data.summary.orderCount || 0;
+        document.getElementById('dailyReturns').textContent = 
+            `￥${(data.summary.returnAmount || 0).toFixed(2)}`;
+
+        // 更新销售明细表格 - 移除操作列
+        const tbody = document.getElementById('dailySalesList');
+        if (data.details && data.details.length > 0) {
+            tbody.innerHTML = data.details.map(sale => `
+                <tr>
+                    <td>${sale.SaleID}</td>
+                    <td>${new Date(sale.SaleDate).toLocaleString()}</td>
+                    <td>${sale.CustomerName || '未知客户'}</td>
+                    <td>${sale.EmployeeName || '未知员工'}</td>
+                    <td class="text-end">￥${(sale.TotalAmount || 0).toFixed(2)}</td>
+                    <td class="text-end">￥${(sale.DiscountAmount || 0).toFixed(2)}</td>
+                    <td class="text-end">￥${(sale.FinalAmount || 0).toFixed(2)}</td>
+                    <td class="text-end">￥${(sale.Profit || 0).toFixed(2)}</td>
+                </tr>
+            `).join('');
+        } else {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">今日暂无销售记录</td></tr>';
+        }
+
+        // 加载库存变化趋势数据并渲染图表
+        try {
+            const trendResp = await fetch('http://localhost:3000/api/statistics/stocktrend?date=' + new Date().toISOString().slice(0, 10));
+            if (trendResp.ok) {
+                const trendData = await trendResp.json();
+                // trendData 应包含 { dates: [...], in: [...], out: [...] }
+                if (window.renderInOutTrendChart) {
+                    renderInOutTrendChart('dailyStockTrendChart', {
+                        dates: trendData.dates,
+                        in: trendData.in,   // 入库量
+                        out: trendData.out  // 出库量
+                    }, '');
+                }
+            } else {
+                document.getElementById('dailyStockTrendChart').innerHTML = '<div class="text-danger">库存趋势数据加载失败</div>';
+            }
+        } catch (e) {
+            document.getElementById('dailyStockTrendChart').innerHTML = '<div class="text-danger">库存趋势数据加载异常</div>';
+        }
+
+        // 更新表格底部合计
+        document.getElementById('totalSales').textContent = 
+            `￥${(data.summary.totalSales || 0).toFixed(2)}`;
+        document.getElementById('totalDiscount').textContent = 
+            `￥${(data.summary.totalDiscount || 0).toFixed(2)}`;
+        document.getElementById('totalFinal').textContent = 
+            `￥${(data.summary.totalFinal || 0).toFixed(2)}`;
+        document.getElementById('totalProfit').textContent = 
+            `￥${(data.summary.totalProfit || 0).toFixed(2)}`;
+
+    } catch (error) {
+        console.error('Error loading daily stats:', error);
+        alert('加载当日统计数据失败: ' + error.message);
+    }
+}
+
 
 // 加载月度统计页面
 function loadMonthlyStatsPage() {
@@ -3823,6 +3914,16 @@ function loadMonthlyStatsPage() {
                             <h3 class="card-text" id="monthlyReturns">￥0.00</h3>
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <!-- 出入库趋势图表 -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">本月出入库趋势</h5>
+                </div>
+                <div class="card-body">
+                    <div id="monthlyInOutTrendChart" style="height:350px;"></div>
                 </div>
             </div>
 
@@ -3907,7 +4008,27 @@ async function loadMonthlyStats() {
         } else {
             tbody.innerHTML = '<tr><td colspan="8" class="text-center">本月暂无销售记录</td></tr>';
         }
-        
+
+        // 加载出入库趋势数据并渲染图表
+        try {
+            const trendResp = await fetch(`http://localhost:3000/api/statistics/inouttrend?month=${month}`);
+            if (trendResp.ok) {
+                const trendData = await trendResp.json();
+                // trendData 应包含 { dates: [...], in: [...], out: [...] }
+                if (window.renderInOutTrendChart) {
+                    renderInOutTrendChart('monthlyInOutTrendChart', {
+                        dates: trendData.dates,
+                        in: trendData.in,
+                        out: trendData.out
+                    }, '');
+                }
+            } else {
+                document.getElementById('monthlyInOutTrendChart').innerHTML = '<div class="text-danger">出入库趋势数据加载失败</div>';
+            }
+        } catch (e) {
+            document.getElementById('monthlyInOutTrendChart').innerHTML = '<div class="text-danger">出入库趋势数据加载异常</div>';
+        }
+
     } catch (error) {
         console.error('Error loading monthly stats:', error);
         alert('加载月度统计数据失败: ' + error.message);
@@ -4345,62 +4466,6 @@ async function loadCustomerOptions() {
     }
 }
 
-// 修改加载当日统计数据函数
-async function loadDailyStats() {
-    try {
-        const response = await fetch('http://localhost:3000/api/stats/daily');
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || '服务器响应错误');
-        }
-        
-        const data = await response.json();
-        console.log('Daily stats data:', data);
-        
-        // 更新统计卡片
-        document.getElementById('dailySales').textContent = 
-            `￥${(data.summary.totalSales || 0).toFixed(2)}`;
-        document.getElementById('dailyProfit').textContent = 
-            `￥${(data.summary.totalProfit || 0).toFixed(2)}`;
-        document.getElementById('dailyOrders').textContent = 
-            data.summary.orderCount || 0;
-        document.getElementById('dailyReturns').textContent = 
-            `￥${(data.summary.returnAmount || 0).toFixed(2)}`;
-        
-        // 更新销售明细表格 - 移除操作列
-        const tbody = document.getElementById('dailySalesList');
-        if (data.details && data.details.length > 0) {
-            tbody.innerHTML = data.details.map(sale => `
-                <tr>
-                    <td>${sale.SaleID}</td>
-                    <td>${new Date(sale.SaleDate).toLocaleString()}</td>
-                    <td>${sale.CustomerName || '未知客户'}</td>
-                    <td>${sale.EmployeeName || '未知员工'}</td>
-                    <td class="text-end">￥${(sale.TotalAmount || 0).toFixed(2)}</td>
-                    <td class="text-end">￥${(sale.DiscountAmount || 0).toFixed(2)}</td>
-                    <td class="text-end">￥${(sale.FinalAmount || 0).toFixed(2)}</td>
-                    <td class="text-end">￥${(sale.Profit || 0).toFixed(2)}</td>
-                </tr>
-            `).join('');
-        } else {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center">今日暂无销售记录</td></tr>';
-        }
-        
-        // 更新表格底部合计
-        document.getElementById('totalSales').textContent = 
-            `￥${(data.summary.totalSales || 0).toFixed(2)}`;
-        document.getElementById('totalDiscount').textContent = 
-            `￥${(data.summary.totalDiscount || 0).toFixed(2)}`;
-        document.getElementById('totalFinal').textContent = 
-            `￥${(data.summary.totalFinal || 0).toFixed(2)}`;
-        document.getElementById('totalProfit').textContent = 
-            `￥${(data.summary.totalProfit || 0).toFixed(2)}`;
-        
-    } catch (error) {
-        console.error('Error loading daily stats:', error);
-        alert('加载当日统计数据失败: ' + error.message);
-    }
-}
 
 function loadUsersPage() {
     const content = `
