@@ -1,3 +1,5 @@
+require('dotenv').config(); // 添加dotenv包
+
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
@@ -14,11 +16,11 @@ app.use('/api/statistics', require('./statistics'));
 
 // 数据库连接配置
 const dbConfig = {
-    host: 'localhost',
-    user: 'root',
-    password: '123123',
-    database: 'supermarket_db',
-    port: 3306
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    port: process.env.DB_PORT
 };
 
 // 修改连接池配置

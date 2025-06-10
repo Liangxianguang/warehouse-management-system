@@ -172,16 +172,13 @@
 
 
 4. **系统配置**
-   修改 `api/server.js` 中的数据库连接配置：
-   ```javascript
-   const pool = mysql.createPool({
-       host: 'localhost',
-       user: 'root',
-       password: 'your_mysql_password',
-       database: 'supermarket_db',
-       acquireTimeout: 60000,
-       timeout: 60000
-   });
+   将.env.example文件复制为.env，并填写数据库连接信息
+   ```
+   DB_HOST=localhost          # 此处可以修改为你的数据库主机地址
+   DB_USER=YourUsername       # 此处填入你的数据库用户名
+   DB_PASSWORD=YourPassword   # 此处填入你的数据库密码
+   DB_DATABASE=supermarket_db # 一般情况不需要变化
+   DB_PORT=3306               # 一般情况不需要变化
    ```
 
 5. **启动系统服务**

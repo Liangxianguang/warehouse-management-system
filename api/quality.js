@@ -1,14 +1,16 @@
 const express = require('express');
 const router = express.Router();
 
-// 引入数据库连接池
+// 引入dotenv和数据库连接池
+require('dotenv').config();
 const mysql = require('mysql2');
+
 const dbConfig = {
-    host: 'localhost',
-    user: 'root',
-    password: '123456',
-    database: 'supermarket_db',
-    port: 3306
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    port: process.env.DB_PORT
 };
 const pool = mysql.createPool(dbConfig);
 

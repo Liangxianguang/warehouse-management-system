@@ -1,16 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const mysql = require('mysql2');
+require('dotenv').config();
 
-// 复用主服务的数据库连接池
+// 统一使用 .env 配置数据库连接
 const dbConfig = {
-    host: 'localhost',
-    user: 'root',
-    password: '123123',
-    database: 'supermarket_db',
-    port: 3306
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    port: process.env.DB_PORT
 };
 const pool = mysql.createPool(dbConfig).promise();
+
 // 获取统计数据（折线图、柱状图、饼图）
 router.get('/advanced', async (req, res) => {
     const {
